@@ -5,7 +5,7 @@ math
 honeybee_ies
 pandas
 ladybug_geometry
-honeybee.model
+honeybee
 honeybee_vtk
 pollination_streamlit_viewer
 pollination_streamlit_io
