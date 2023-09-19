@@ -1,10 +1,9 @@
 streamlit
 pathlib
-math
 honeybee_ies
 pandas
 ladybug_geometry
-honeybee
+honeybee_core
 honeybee_vtk
 pollination_streamlit_viewer
 pollination_streamlit_io
