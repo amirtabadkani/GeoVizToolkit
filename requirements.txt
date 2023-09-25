@@ -3,8 +3,11 @@ pathlib
 honeybee_ies
 pandas
 ladybug_geometry
-honeybee_core
-honeybee_vtk
+honeybee-core
+honeybee-vtk
 pollination_streamlit_viewer
 pollination_streamlit_io
 pollination-streamlit
+ladybug-core
+lbt-honeybee
+ladybug-vtk
