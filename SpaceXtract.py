@@ -1,8 +1,6 @@
 import os, json
 import pathlib
 from pathlib import Path
-import pandas as pd
-import numpy as np
 from pandas import DataFrame
 import math
 
@@ -17,7 +15,7 @@ from pollination_streamlit_io import get_hbjson
 
 import streamlit as st
 
-st.set_page_config(page_title='GeoVizToolkit',
+st.set_page_config(page_title='SpaceXtract',
     layout="wide"
 )
 
@@ -33,7 +31,16 @@ with st.sidebar:
     
 
 #MAIN PAGE
-st.header("Upload .hbjson File:")
+
+st.title("SpaceXtract")
+st.subheader("Before uploading, please check the following items:")
+st.markdown("**1- Each room should have unique names to calculate the internal wall surface areas accurately!**")
+st.markdown("**2- Boundary conditions of adjacent surfaces should be done prior to use the tool, otherwise external wall surface areas will include internal walls!**")
+st.markdown("**3- If you are interested to calculate the conditioned spaces only, they should be set as conditioned in the model!**")
+
+
+
+st.subheader("Upload .hbjson Model:")
 
 
 if 'temp' not in st.session_state:
@@ -81,9 +88,8 @@ def callback_once():
 
 hbjson = get_hbjson('get_hbjson', on_change=callback_once)
 
-
 if st.session_state.get_hbjson is not None:
-    st.subheader('Hbjson Visualized')
+    st.subheader(f'Visualizing {callback_once().display_name} Model')
     if 'content' in st.session_state:
         viewer(
             content=st.session_state.content,
@@ -112,16 +118,16 @@ if st.button("**Export as .GEM File (for IES Users)**"):
 with st.sidebar:
     area_calc_method = st.radio("Select the Facade Area Calculation Methodology", options = ['Conditioned Zones', 'Entire Building'])
 
-
 def model_info() -> DataFrame:
 
     model = callback_once()
 
     #Extracting properties based on rooms
     model_data = {'Conditioning Status':[], 'Program Type': [], 'volume (m3)': [],'floor_area (m2)': [],'roof_area (m2)':[],  'exterior_wall_area (m2)': [],
-                  'exterior_aperture_area (m2)': [], 'exterior_skylight_area (m2)':[], 'display_name':[]}
+                  'exterior_aperture_area (m2)': [], 'exterior_skylight_area (m2)':[],'display_name':[]}
 
-
+    internal_srf_area = []
+    room_id = []
     for room in model.rooms:
         model_data['display_name'].append(room.display_name)
         model_data['Conditioning Status'].append(room.properties.energy.is_conditioned)
@@ -129,17 +135,28 @@ def model_info() -> DataFrame:
         model_data['volume (m3)'].append(room.volume)
         model_data['floor_area (m2)'].append(room.floor_area)
         model_data['roof_area (m2)'].append(room.exterior_roof_area)
-        model_data['exterior_wall_area (m2)'].append(room.exterior_wall_area)
+        model_data['exterior_wall_area (m2)'].append(room.exterior_wall_area - room.exterior_aperture_area)
         model_data['exterior_aperture_area (m2)'].append(room.exterior_aperture_area)
         model_data['exterior_skylight_area (m2)'].append(room.exterior_skylight_aperture_area)
-    
-      
+        #internal walls   
+        for face in room.faces:
+            room_id.append(room.display_name)
+            if face.boundary_condition.name == 'Surface':
+                internal_srf_area.append(face.area)
+            else:
+                internal_srf_area.append(0)
+        internal = DataFrame([room_id,internal_srf_area],['ROOM_ID','Internal_Faces']).transpose().sort_values('ROOM_ID').groupby('ROOM_ID').sum()
+
+    model_data = DataFrame.from_dict(model_data).sort_values('display_name').set_index('display_name')
+
+    model_data['internal_wall_area (m2)'] = internal['Internal_Faces']
+
     model_shade = {'total_external_shades_area (m2)':[]}
 
     for shade in model.outdoor_shades:
         model_shade['total_external_shades_area (m2)'].append(shade.area)
     
-    return DataFrame.from_dict(model_data).set_index('display_name'), DataFrame.from_dict(model_shade).sum()
+    return model_data, DataFrame.from_dict(model_shade).sum()
 
 
 #Extracting room index based on facade calc methodology 
@@ -243,7 +260,7 @@ if st.session_state.get_hbjson is not None:
     ##Source: https://www.sciencedirect.com/science/article/abs/pii/S037877881400574X?via%3Dihub
 
     building_volume = model_info()[0]['volume (m3)'].sum()
-    Building_area = model_info()[0][['floor_area (m2)','roof_area (m2)','exterior_wall_area (m2)','exterior_aperture_area (m2)','exterior_skylight_area (m2)']].sum().sum()
+    Building_area = model_info()[0][['floor_area (m2)','roof_area (m2)','exterior_wall_area (m2)','exterior_aperture_area (m2)','exterior_skylight_area (m2)']].sum().sum() #internal walls excluded 
 
     build_RC = (6 * (pow(building_volume,2/3))) / Building_area
 
