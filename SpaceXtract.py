@@ -31,7 +31,6 @@ with st.sidebar:
     
 
 #MAIN PAGE
-
 st.title("SpaceXtract")
 st.subheader("Before uploading, please check the following items:")
 st.markdown("**1- Each room should have unique names to calculate the internal wall surface areas accurately!**")
@@ -41,7 +40,6 @@ st.markdown("**3- If you are interested to calculate the conditioned spaces only
 
 
 st.subheader("Upload .hbjson Model:")
-
 
 if 'temp' not in st.session_state:
      st.session_state.temp = Path('/tmp')
@@ -100,18 +98,26 @@ if st.session_state.get_hbjson is not None:
             }
         )
 
+    exports = st.columns([2,15])
 
+    with exports[0]:
+        # EXPORT AS GEM FILE
+        path_to_ies_folder = pathlib.Path('./gem')
+        path_to_ies_folder.mkdir(parents=True, exist_ok=True)
+
+        if st.button("**Export as .GEM File (for IES Users)**"):
+                
+            data=hb2ies.writer.model_to_ies(model =callback_once(), folder = path_to_ies_folder)
+
+    with exports[1]:
+        #EXPORT AS IDF FILE
+        if st.button("**Export as .IDF File (for ENERGYPLUS Users)**"):
+                
+            data=callback_once().to.idf(callback_once())
+            with open(f'./idf/{callback_once().display_name}.idf', 'w') as file:
+                file.write(data)
 else:
     st.info('Load a model!')
-
-# EXPORT AS GEM FILE
-path_to_out_folder = pathlib.Path('./gem')
-path_to_out_folder.mkdir(parents=True, exist_ok=True)
-
-if st.button("**Export as .GEM File (for IES Users)**"):
-        
-    data=hb2ies.writer.model_to_ies(model =callback_once(), folder = path_to_out_folder)
-
 
 #Generating the model
 
@@ -141,7 +147,7 @@ def model_info() -> DataFrame:
         #internal walls   
         for face in room.faces:
             room_id.append(room.display_name)
-            if face.boundary_condition.name == 'Surface':
+            if face.boundary_condition.name == 'Surface' and face.azimuth > 0:
                 internal_srf_area.append(face.area)
             else:
                 internal_srf_area.append(0)
@@ -152,11 +158,13 @@ def model_info() -> DataFrame:
     model_data['internal_wall_area (m2)'] = internal['Internal_Faces']
 
     model_shade = {'total_external_shades_area (m2)':[]}
-
+    
     for shade in model.outdoor_shades:
         model_shade['total_external_shades_area (m2)'].append(shade.area)
-    
-    return model_data, DataFrame.from_dict(model_shade).sum()
+
+    model_shade = DataFrame.from_dict(model_shade).sum()
+
+    return model_data, model_shade
 
 
 #Extracting room index based on facade calc methodology 
@@ -269,6 +277,10 @@ if st.session_state.get_hbjson is not None:
     st.markdown('---')
 
     st.subheader(f'**Building General Details**')
+    if model_info()[0].index.nunique() != len(model_info()[0].index): #Checking room names similarity for internal walls calculations
+        st.warning("There are similar room names in the model which will cause in inaccurate internal wall surface areas calculations! Please fix them before uploading the model.")
+    else:
+        ""
     st.dataframe(model_info()[0], use_container_width=True)
     st.markdown('---')
     
