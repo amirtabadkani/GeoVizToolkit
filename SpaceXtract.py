@@ -98,7 +98,7 @@ if st.session_state.get_hbjson is not None:
             }
         )
 
-    exports = st.columns([2,15])
+    exports = st.columns([5,5,10])
 
     with exports[0]:
         # EXPORT AS GEM FILE
@@ -167,8 +167,7 @@ def model_info() -> DataFrame:
     return model_data, model_shade
 
 
-#Extracting room index based on facade calc methodology 
-
+#Extracting room index based on facade calc methodology
 def facade_calc() -> DataFrame:
 
     model = callback_once()
@@ -183,84 +182,87 @@ def facade_calc() -> DataFrame:
         elif area_calc_method == 'Entire Building':
             target_rooms_index.append(i)
 
-    #Apertures based on directions
-    aperture_azimuth = []
-    aperture_area = []
-    verti_faces_azimuth = []
-    verti_faces_area = []
+    #Surface Areas based on directions
     roof_faces_area = []
     floor_faces_area = []
-    
+    aperture_ar = []
+    vert_face_area = []
+    aperture_orientation = []
+    face_orientation = []
 
-    model_apertures = {'Aperture Orientation':[],'Aperture Area (m2)':[]}
-    model_faces_vertical = {'Wall Orientation':[],'Wall Area (m2)':[]}
+
     model_roof = {'Roof Area (m2)':[]}
     model_floor = {'Floor Area (m2)':[]}
 
     for room_index in target_rooms_index:
+         
         for aperture in range(len(model.rooms[room_index].exterior_apertures)):
-
             if model.rooms[room_index].exterior_apertures[aperture].azimuth > 0: #excluding skylights if any
                 
                 aper_azimuth = model.rooms[room_index].exterior_apertures[aperture].horizontal_orientation(north_vector=Vector2D(vectors[0],vectors[1]))
-                
+
                 if (aper_azimuth <= 45) or (aper_azimuth > 315):
-                    aperture_orientation = 'North'
-                    aperture_ar = model.rooms[room_index].exterior_apertures[aperture].area
+                    aperture_orientation.append('North')
+                    aperture_ar.append(model.rooms[room_index].exterior_apertures[aperture].area)
                 elif (aper_azimuth > 45) and (aper_azimuth <= 135):
-                    aperture_orientation = 'East'
-                    aperture_ar = model.rooms[room_index].exterior_apertures[aperture].area
+                    aperture_orientation.append('East')
+                    aperture_ar.append(model.rooms[room_index].exterior_apertures[aperture].area)
                 elif (aper_azimuth > 135) and (aper_azimuth <= 225):
-                    aperture_orientation = 'South'
-                    aperture_ar = model.rooms[room_index].exterior_apertures[aperture].area
+                    aperture_orientation.append('South')
+                    aperture_ar.append(model.rooms[room_index].exterior_apertures[aperture].area)
                 elif (aper_azimuth > 225) and (aper_azimuth <= 315):
-                    aperture_orientation = 'West'
-                    aperture_ar = model.rooms[room_index].exterior_apertures[aperture].area
+                    aperture_orientation.append('West')
+                    aperture_ar.append(model.rooms[room_index].exterior_apertures[aperture].area)
                 
-                aperture_azimuth.append(aperture_orientation)
-                aperture_area.append(round(aperture_ar,2))
+            model_apertures = DataFrame([aperture_orientation,aperture_ar]).transpose()
+            model_apertures.rename(columns = {0:'Aperture Orientation', 1:'Aperture Area (m2)'}, inplace= True)
+            model_apertures = model_apertures.groupby('Aperture Orientation').sum()
+            model_apertures = model_apertures.sort_index()
 
-                model_apertures['Aperture Orientation'] = aperture_azimuth
-                model_apertures['Aperture Area (m2)'] = aperture_area
-        
-    for room_index in target_rooms_index:
         for face in range(len(model.rooms[room_index].faces)):
-            #Filtering external faces only
             if (model.rooms[room_index].faces[face].boundary_condition.name == 'Outdoors') and (model.rooms[room_index].faces[face].type.name != 'RoofCeiling') and (model.rooms[room_index].faces[face].type.name != 'Floor'):
-                #checking vertical faces
-                    
+            
                 vert_face_azimuth = model.rooms[room_index].faces[face].horizontal_orientation(north_vector=Vector2D(vectors[0],vectors[1]))
-                # vert_face_area = model.rooms[room_index].faces[face].area
-                if vert_face_azimuth <= 45 or vert_face_azimuth > 315:
-                    face_orientation = 'North'
-                    vert_face_area = model.rooms[room_index].faces[face].area
-                elif vert_face_azimuth > 45 and vert_face_azimuth <= 135:
-                    face_orientation = 'East'
-                    vert_face_area = model.rooms[room_index].faces[face].area
-                elif vert_face_azimuth > 135 and vert_face_azimuth <= 225:
-                    face_orientation = 'South'
-                    vert_face_area = model.rooms[room_index].faces[face].area
-                elif vert_face_azimuth > 225 and vert_face_azimuth <= 315:
-                    face_orientation = 'West'
-                    vert_face_area = model.rooms[room_index].faces[face].area
-                
-                verti_faces_azimuth.append(face_orientation)
-                verti_faces_area.append(round(vert_face_area,2))
 
-                model_faces_vertical['Wall Orientation'] = verti_faces_azimuth
-                model_faces_vertical['Wall Area (m2)'] = verti_faces_area
-        
+                if vert_face_azimuth <= 45 or vert_face_azimuth > 315:
+                    face_orientation.append('North')
+                    vert_face_area.append(model.rooms[room_index].faces[face].area)
+
+                elif vert_face_azimuth > 45 and vert_face_azimuth <= 135:
+                    face_orientation.append('East')                                
+                    vert_face_area.append(model.rooms[room_index].faces[face].area)
+
+                elif vert_face_azimuth > 135 and vert_face_azimuth <= 225:
+                    face_orientation.append('South')
+                    vert_face_area.append(model.rooms[room_index].faces[face].area)
+            
+                elif vert_face_azimuth > 225 and vert_face_azimuth <= 315:
+                    face_orientation.append('West')
+                    vert_face_area.append(model.rooms[room_index].faces[face].area)
+
+            model_faces_vertical = DataFrame([face_orientation,vert_face_area]).transpose()
+            model_faces_vertical.rename(columns = {0:'Face Orientation', 1:'Face Area (m2)'}, inplace= True)
+            model_faces_vertical = model_faces_vertical.groupby('Face Orientation').sum()
+            model_faces_vertical = model_faces_vertical.sort_index()
+            
+
             #checking horizontal faces
             if model.rooms[room_index].faces[face].type.name == 'RoofCeiling':
                 horiz_face_area = model.rooms[room_index].faces[face].area
                 roof_faces_area.append(round(horiz_face_area,2))
                 model_roof['Roof Area (m2)'] = roof_faces_area
-            if model.rooms[room_index].faces[face].type.name == 'Floor': #if there is any exposed floors, if not returns 0
+            if model.rooms[room_index].faces[face].type.name == 'Floor': #if there is any exposed floor, if not returns 0
                 horiz_face_area = model.rooms[room_index].faces[face].area
                 floor_faces_area.append(round(horiz_face_area,2))
                 model_floor['Floor Area (m2)'] = floor_faces_area
-
-    return target_rooms_index, DataFrame.from_dict(model_apertures).groupby('Aperture Orientation').sum(),DataFrame.from_dict(model_faces_vertical).groupby('Wall Orientation').sum(),DataFrame.from_dict(model_roof).sum(), DataFrame.from_dict(model_floor).sum()
+        
+        model_faces_vertical['ExWall Area (m2)'] = model_faces_vertical['Face Area (m2)'] - model_apertures['Aperture Area (m2)']
+        model_faces_vertical['ExWall Area (m2)'].fillna(model_faces_vertical['Face Area (m2)'], inplace=True)
+        model_faces_vertical['WWR'] = model_apertures['Aperture Area (m2)'] / model_faces_vertical['ExWall Area (m2)']
+        model_faces_vertical['WWR'] = (model_apertures['Aperture Area (m2)'] / model_faces_vertical['ExWall Area (m2)'])*100
+        model_faces_vertical['WWR'].fillna(0, inplace=True)    
+        
+    return target_rooms_index, model_apertures, model_faces_vertical, DataFrame.from_dict(model_roof).sum(), DataFrame.from_dict(model_floor).sum()
 
 
 if st.session_state.get_hbjson is not None:
@@ -294,17 +296,17 @@ if st.session_state.get_hbjson is not None:
         with cols[0]:
             st.dataframe(model_info()[1], use_container_width=True)
             
-            col_wwr = st.columns(len(facade_calc()[1].index))
+            col_wwr = st.columns(len(facade_calc()[2].index))
 
-            for metric in range(len(facade_calc()[1].index)):
+            for metric in range(len(facade_calc()[2].index)):
             
                 with col_wwr[metric]:
-                    st.metric(f"WWR-{facade_calc()[1].index[metric]}",f"{int(facade_calc()[1].iloc[metric].values/facade_calc()[2].iloc[metric].values*100)}%")
+                    st.metric(f"WWR-{facade_calc()[2].index[metric]}",f"{int(facade_calc()[2]['WWR'].iloc[metric])}%")
         
         with cols[1]:
             st.dataframe(facade_calc()[1], use_container_width=True)
         with cols[2]:
-            st.dataframe(facade_calc()[2], use_container_width=True)
+            st.dataframe(facade_calc()[2].drop(['Face Area (m2)','WWR'], axis = 1), use_container_width=True)
         with cols[3]:
             st.dataframe(facade_calc()[3], use_container_width=True)
             st.dataframe(facade_calc()[4], use_container_width=True)
@@ -313,4 +315,3 @@ if st.session_state.get_hbjson is not None:
 
 else:
     ""
-
