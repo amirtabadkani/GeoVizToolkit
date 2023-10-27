@@ -1,9 +1,10 @@
-import os, json
+import json
 import pathlib
 from pathlib import Path
 from pandas import DataFrame
 import math
 import numpy as np
+import plotly.graph_objects as go
 
 import honeybee_ies as hb2ies
 from honeybee.model import Model as HBModel
@@ -211,7 +212,6 @@ def model_info() -> DataFrame:
 
     return model_data, model_shade
 
-
 #Extracting room index based on facade calc methodology
 def facade_calc() -> DataFrame:
 
@@ -262,13 +262,13 @@ def facade_calc() -> DataFrame:
                 elif (aper_azimuth > 225) and (aper_azimuth <= 315):
                     aperture_area_west.append(model.rooms[room_index].exterior_apertures[aperture].area)
                     
-            aperture_orientation['North'] = sum(aperture_area_north)
-            aperture_orientation['East'] = sum(aperture_area_east)
-            aperture_orientation['South'] = sum(aperture_area_south)
-            aperture_orientation['West'] = sum(aperture_area_west)
-            model_apertures = DataFrame.from_dict([aperture_orientation]).transpose()
-            model_apertures.rename(columns = {0:'Aperture Area (m2)'}, inplace= True)
-            model_apertures = model_apertures.sort_index()
+        aperture_orientation['North'] = sum(aperture_area_north)
+        aperture_orientation['East'] = sum(aperture_area_east)
+        aperture_orientation['South'] = sum(aperture_area_south)
+        aperture_orientation['West'] = sum(aperture_area_west)
+        model_apertures = DataFrame.from_dict([aperture_orientation]).transpose()
+        model_apertures.rename(columns = {0:'Aperture Area (m2)'}, inplace= True)
+        model_apertures = model_apertures.sort_index()
 
         for face in range(len(model.rooms[room_index].faces)):
             if (model.rooms[room_index].faces[face].boundary_condition.name == 'Outdoors') and (model.rooms[room_index].faces[face].type.name != 'RoofCeiling') and (model.rooms[room_index].faces[face].type.name != 'Floor'):
@@ -308,8 +308,6 @@ def facade_calc() -> DataFrame:
                 model_floor['Floor Area (m2)'] = floor_faces_area
         
         model_faces_vertical['ExWall Area (m2)'] = model_faces_vertical['Face Area (m2)'] - model_apertures['Aperture Area (m2)']
-        model_faces_vertical['ExWall Area (m2)'].fillna(model_faces_vertical['Face Area (m2)'], inplace=True)
-        model_faces_vertical['WWR'] = model_apertures['Aperture Area (m2)'] / model_faces_vertical['Face Area (m2)']
         model_faces_vertical['WWR'] = (model_apertures['Aperture Area (m2)'] / model_faces_vertical['Face Area (m2)'])*100
         model_faces_vertical['WWR'].fillna(0, inplace=True)    
         
@@ -371,43 +369,42 @@ if st.session_state.get_hbjson is not None:
 if st.session_state.get_hbjson is not None:
     if baseline_calc == 'Facade Calculator NCC 2019 (Australia)':
         st.header("Reference Building Fabric Performance - NCC19 Facade Calculator")
-        Wall_U_Value = []
-        for i in range(len(facade_calc()[2]['WWR'].index)):
-            if facade_calc()[2]['WWR'].iloc[i] < 20:
+        
+        #R Target
+        R_target = []
+        for i in range(0,4):
+            if facade_calc()[2]['WWR'].iloc[i] <= 20:
                 if bldg_classes[building_class] == 2 or bldg_classes[building_class] == 5 or bldg_classes[building_class] == 6 or bldg_classes[building_class] == 7 or bldg_classes[building_class] == 8 or bldg_classes[building_class] == '9b' or bldg_classes[building_class] == '9a':
                     if aus_climate_zone[climate_zone] == 2 or aus_climate_zone[climate_zone] == 3 or aus_climate_zone[climate_zone] == 4 or aus_climate_zone[climate_zone] == 5 or aus_climate_zone[climate_zone] == 6 or aus_climate_zone[climate_zone] == 7 or aus_climate_zone[climate_zone] == 8:
-                        R_target = 1.4
-                        if 1/ex_wall_dts >= 1/R_target:
-                            Wall_U_Value.append(1/R_target)  
+                        R_target.append(1.4)
                     elif aus_climate_zone[climate_zone] == 1:
-                        R_target = 2.4
-                        if 1/ex_wall_dts >= 1/R_target:
-                            Wall_U_Value.append(1/R_target)
+                        R_target.append(2.4)
                 elif bldg_classes[building_class] == 3 or bldg_classes[building_class] == '9c' or bldg_classes[building_class] == '9a ward':
                     if aus_climate_zone[climate_zone] == 1 or aus_climate_zone[climate_zone] == 3:
-                        R_target = 3.3
-                        if 1/ex_wall_dts >= 1/R_target:
-                            Wall_U_Value.append(1/R_target)
+                        R_target.append(3.3)
                     elif aus_climate_zone[climate_zone] == 2 or aus_climate_zone[climate_zone] == 5:
-                        R_target = 1.4
-                        if 1/ex_wall_dts >= 1/R_target:
-                            Wall_U_Value.append(1/R_target)
+                        R_target.append(1.4)
                     elif aus_climate_zone[climate_zone] == 4 or aus_climate_zone[climate_zone] == 6 or aus_climate_zone[climate_zone] == 7:
-                        R_target = 2.8
-                        if 1/ex_wall_dts >= 1/R_target:
-                            Wall_U_Value.append(1/R_target)
+                        R_target.append(2.8)
                     elif aus_climate_zone[climate_zone] == 8:
-                        R_target = 3.8
-                        if 1/ex_wall_dts >= 1/R_target:
-                            Wall_U_Value.append(1/R_target)  
-            
-            elif facade_calc()[2]['WWR'].iloc[i] >= 20:
-                R_target = 1.0
-                if 1/ex_wall_dts > 1/R_target:
-                    Wall_U_Value.append(1/R_target)
-                elif 1/ex_wall_dts <= 1/R_target:
+                        R_target.append(3.8)
+            elif facade_calc()[2]['WWR'].iloc[i] > 20:
+                R_target.append(1.0)
+
+        Wall_U_Value = []
+        for i in range(0,4):
+            if facade_calc()[2]['WWR'].iloc[i] <= 20 and 1/ex_wall_dts >= 1/R_target[i]:
+                Wall_U_Value.append(1/R_target[i]) 
+            else:
+                if facade_calc()[2]['WWR'].iloc[i] > 20 and 1/ex_wall_dts >= 1/R_target[i]:
+                    Wall_U_Value.append(1/R_target[i])
+                else:
                     Wall_U_Value.append(1/ex_wall_dts)
-        
+
+
+        shading_multi = 1.0 #assuming no shades for reference buildings and will be equal for all orientations
+
+        #Target Wall Glazing U-values
         if bldg_classes[building_class] == 2 or bldg_classes[building_class] == 5 or bldg_classes[building_class] == 6 or bldg_classes[building_class] == 7 or bldg_classes[building_class] == 8 or bldg_classes[building_class] == '9b' or bldg_classes[building_class] == '9a':
             target_wall_glazing_U = 2.0
         else:
@@ -422,22 +419,37 @@ if st.session_state.get_hbjson is not None:
                     target_wall_glazing_U = 0.9
 
         u_value_glazing = []
+        wall_glazing_u_value = []
+        solar_admittance_single = []
+        sum_UA = []
+
         for i in range(0,4):
             x = (target_wall_glazing_U*facade_calc()[2]['Face Area (m2)'].iloc[i]-(Wall_U_Value[i]*(facade_calc()[2]['Face Area (m2)'].iloc[i]-facade_calc()[1]['Aperture Area (m2)'].iloc[i])))/facade_calc()[1]['Aperture Area (m2)'].iloc[i]
+            UA = ((1/ex_wall_dts)*facade_calc()[2]['ExWall Area (m2)'].iloc[i]) + (glass_u_dts*facade_calc()[1]['Aperture Area (m2)'].iloc[i])
+            sum_UA.append(((1/ex_wall_dts)*facade_calc()[2]['ExWall Area (m2)'].iloc[i]) + (glass_u_dts*facade_calc()[1]['Aperture Area (m2)'].iloc[i]))
+            wall_glazing_u_value.append(UA/facade_calc()[2]['Face Area (m2)'].iloc[i])
+            
             if x == np.inf:
                 u_value_glazing.append(0) #Y66
             else:
                 u_value_glazing.append(x)
-        
+            #----
+            if facade_calc()[1]['Aperture Area (m2)'].iloc[i] == 0 :
+                solar_admittance_single.append(0)
+            elif facade_calc()[1]['Aperture Area (m2)'].iloc[i] > 0 :
+                solar_admittance_single.append((shading_multi*glass_shgc_dts*facade_calc()[1]['Aperture Area (m2)'].iloc[i]) / facade_calc()[2]['Face Area (m2)'].iloc[i])
+
+    
         dts_glazing_U = DataFrame([u_value_glazing,facade_calc()[1]['Aperture Area (m2)'].values]).transpose()
         dts_glazing_U.rename(columns = {0:'U-Value Glazing', 1:'Vision Area'},index = {0:'East',1:'North',2:'South',3:'West'}, inplace= True)
         
         dts_glazing_U['Area Weighted U-value Glazing'] = dts_glazing_U['U-Value Glazing']*facade_calc()[1]['Aperture Area (m2)']
         Reference_Building_glazing_U_value = round(dts_glazing_U['Area Weighted U-value Glazing'].sum()/facade_calc()[1]['Aperture Area (m2)'].sum(),2)
-        
+        Reference_Building_wall_U_value = (Wall_U_Value[0]*facade_calc()[2]['ExWall Area (m2)'].iloc[0]+Wall_U_Value[1]*facade_calc()[2]['ExWall Area (m2)'].iloc[1]+Wall_U_Value[2]*facade_calc()[2]['ExWall Area (m2)'].iloc[2]+Wall_U_Value[3]*facade_calc()[2]['ExWall Area (m2)'].iloc[3]) / facade_calc()[2]['ExWall Area (m2)'].sum()
 
+        #Solar admittancce targets
         if bldg_classes[building_class] == 2 or bldg_classes[building_class] == 5 or bldg_classes[building_class] == 6 or bldg_classes[building_class] == 7 or bldg_classes[building_class] == 8 or bldg_classes[building_class] == '9b' or bldg_classes[building_class] == '9a':
-            if aus_climate_zone[climate_zone] ==2 or aus_climate_zone[climate_zone] == 3 or aus_climate_zone[climate_zone] == 4 or aus_climate_zone[climate_zone] == 5 or aus_climate_zone[climate_zone] == 6 or aus_climate_zone[climate_zone] == 7:
+            if aus_climate_zone[climate_zone] ==2 or aus_climate_zone[climate_zone] == 4 or aus_climate_zone[climate_zone] == 5 or aus_climate_zone[climate_zone] == 6 or aus_climate_zone[climate_zone] == 7:
                 solar_admittance = {'East':0.13, 'North':0.13,'South':0.13, 'West':0.13}
             elif aus_climate_zone[climate_zone] ==1:
                 solar_admittance = {'East':0.12, 'North':0.12,'South':0.12, 'West':0.12}
@@ -492,16 +504,18 @@ if st.session_state.get_hbjson is not None:
                 solar_admittance_weight_coe = {'East':1.26, 'North':1.24,'South':1, 'West':1.05}
             
         
-        shading_multi = 1.0 #assuming no shades for reference buildings and will be equal for all orientations
+        
         dts_shgc_single = {'East':[round(solar_admittance['East']/(shading_multi*(facade_calc()[2]['WWR'].iloc[0]/100)),2)],
                     'North':[round(solar_admittance['North']/(shading_multi*(facade_calc()[2]['WWR'].iloc[1]/100)),2)],
                     'South':[round(solar_admittance['South']/(shading_multi*(facade_calc()[2]['WWR'].iloc[2]/100)),2)],
                     'West':[round(solar_admittance['West']/(shading_multi*(facade_calc()[2]['WWR'].iloc[3]/100)),2)]}
         
+        
         dts_shgc_single = DataFrame.from_dict(dts_shgc_single).transpose()
         dts_shgc_single.rename(columns = {0:'SHGC'},inplace= True)
+        
 
-        #SHGC Total
+        #SA COE based on WWR%
         if facade_calc()[2]['WWR'].iloc[0] < 20: #East
             solar_admittance_weight_coe_east = 0
         elif facade_calc()[2]['WWR'].iloc[0] >= 20:
@@ -519,61 +533,83 @@ if st.session_state.get_hbjson is not None:
         elif facade_calc()[2]['WWR'].iloc[3] >= 20:
             solar_admittance_weight_coe_west = solar_admittance_weight_coe['West']
         
+        #SA based on aperture existance
+        if facade_calc()[2]['WWR'].iloc[0] == 0: #East
+            SA_east = 0
+        elif facade_calc()[2]['WWR'].iloc[0] >= 20:
+            solar_admittance_weight_coe_east = solar_admittance_weight_coe['East']
+        if facade_calc()[2]['WWR'].iloc[1] < 20: #North
+            solar_admittance_weight_coe_north = 0
+        elif facade_calc()[2]['WWR'].iloc[1] >= 20:
+            solar_admittance_weight_coe_north = solar_admittance_weight_coe['North']
+        if facade_calc()[2]['WWR'].iloc[2] < 20: #South
+            solar_admittance_weight_coe_south = 0
+        elif facade_calc()[2]['WWR'].iloc[2] >= 20:
+            solar_admittance_weight_coe_south = solar_admittance_weight_coe['South']
+        if facade_calc()[2]['WWR'].iloc[3] < 20: #West
+            solar_admittance_weight_coe_west = 0
+        elif facade_calc()[2]['WWR'].iloc[3] >= 20:
+            solar_admittance_weight_coe_west = solar_admittance_weight_coe['West']
+
+
+
+        #Total Values
         reference_ac_energy = facade_calc()[2]['Face Area (m2)'].iloc[0]*solar_admittance_weight_coe_east*solar_admittance['East']+facade_calc()[2]['Face Area (m2)'].iloc[1]*solar_admittance_weight_coe_north*solar_admittance['North']+facade_calc()[2]['Face Area (m2)'].iloc[2]*solar_admittance_weight_coe_south*solar_admittance['South']+facade_calc()[2]['Face Area (m2)'].iloc[3]*solar_admittance_weight_coe_east*solar_admittance['West']
         dts_shgc_total = reference_ac_energy/((solar_admittance_weight_coe_east*dts_glazing_U['Vision Area'].iloc[0]*shading_multi)+(solar_admittance_weight_coe_north*dts_glazing_U['Vision Area'].iloc[1]*shading_multi)+(solar_admittance_weight_coe_south*dts_glazing_U['Vision Area'].iloc[2]*shading_multi)+(solar_admittance_weight_coe_west*dts_glazing_U['Vision Area'].iloc[3]*shading_multi))
-        
+        wall_glazing_value_total = sum(sum_UA) / facade_calc()[2]['Face Area (m2)'].sum()
+        proposed_ac_energy = facade_calc()[2]['Face Area (m2)'].iloc[0]*solar_admittance_weight_coe_east*solar_admittance_single[0]+facade_calc()[2]['Face Area (m2)'].iloc[1]*solar_admittance_weight_coe_north*solar_admittance_single[1]+facade_calc()[2]['Face Area (m2)'].iloc[2]*solar_admittance_weight_coe_south*solar_admittance_single[2]+facade_calc()[2]['Face Area (m2)'].iloc[3]*solar_admittance_weight_coe_west*solar_admittance_single[3]
 
         st.subheader("Method 1:")
         cols = st.columns(4)
         with cols[0]:
-            st.metric("Wall U-Value(W/m².K) - East", round(Wall_U_Value[0],2))
+            st.metric("East Wall U-Value(W/m².K", round(Wall_U_Value[0],2))
         with cols[1]:
-            st.metric("Wall U-Value(W/m².K) - North", round(Wall_U_Value[1],2))
+            st.metric("North Wall U-Value(W/m².K)", round(Wall_U_Value[1],2))
         with cols[2]:
-            st.metric("Wall U-Value(W/m².K) - South", round(Wall_U_Value[2],2))
+            st.metric("South Wall U-Value(W/m².K)", round(Wall_U_Value[2],2))
         with cols[3]:
-            st.metric("Wall U-Value(W/m².K) - West", round(Wall_U_Value[3],2))
+            st.metric("West Wall U-Value(W/m².K)", round(Wall_U_Value[3],2))
         cols = st.columns(4)
         with cols[0]:
             if dts_glazing_U['U-Value Glazing'].iloc[0] == 0:
-                st.metric("Glazing U-Value(W/m².K) - East",None)
+                st.metric("East Glazing U-Value(W/m².K)",None)
             else:
                 if dts_glazing_U['U-Value Glazing'].iloc[0] > 5.8:
-                    st.metric("Glazing U-Value(W/m².K) - East",5.8)
+                    st.metric("East Glazing U-Value(W/m².K)",5.8)
                 elif Reference_Building_glazing_U_value < 1.5:
-                    st.metric("Glazing U-Value(W/m².K) - East",1.5)
+                    st.metric("East Glazing U-Value(W/m².K)",1.5)
                 else:
-                    st.metric("Glazing U-Value(W/m².K) - East", round(dts_glazing_U['U-Value Glazing'].iloc[0],2))
+                    st.metric("East Glazing U-Value(W/m².K)", round(dts_glazing_U['U-Value Glazing'].iloc[0],2))
         with cols[1]:
             if dts_glazing_U['U-Value Glazing'].iloc[0] == 0:
-                st.metric("Glazing U-Value(W/m².K) - North",None)
+                st.metric("North Glazing U-Value(W/m².K)",None)
             else:
                 if dts_glazing_U['U-Value Glazing'].iloc[1] > 5.8:
-                    st.metric("Glazing U-Value(W/m².K) - North",5.8)
+                    st.metric("North Glazing U-Value(W/m².K)",5.8)
                 elif Reference_Building_glazing_U_value < 1.5:
-                    st.metric("Glazing U-Value(W/m².K) - North",1.5)
+                    st.metric("North Glazing U-Value(W/m².K)",1.5)
                 else:
-                    st.metric("Glazing U-Value(W/m².K) - North", round(dts_glazing_U['U-Value Glazing'].iloc[1],2))
+                    st.metric("North Glazing U-Value(W/m².K)", round(dts_glazing_U['U-Value Glazing'].iloc[1],2))
         with cols[2]:
             if dts_glazing_U['U-Value Glazing'].iloc[0] == 0:
-                st.metric("Glazing U-Value(W/m².K) - South",None)
+                st.metric("South Glazing U-Value(W/m².K)",None)
             else:
                 if dts_glazing_U['U-Value Glazing'].iloc[2] >= 5.8:
-                    st.metric("Glazing U-Value(W/m².K) - South",5.8)
+                    st.metric("South Glazing U-Value(W/m².K)",5.8)
                 elif Reference_Building_glazing_U_value <= 1.5:
-                    st.metric("Glazing U-Value(W/m².K) - South",1.5)
+                    st.metric("South Glazing U-Value(W/m².K)",1.5)
                 else:
-                    st.metric("Glazing U-Value(W/m².K) - South", round(dts_glazing_U['U-Value Glazing'].iloc[2],2))
+                    st.metric("South Glazing U-Value(W/m².K)", round(dts_glazing_U['U-Value Glazing'].iloc[2],2))
         with cols[3]:
             if dts_glazing_U['U-Value Glazing'].iloc[0] == 0:
-                st.metric("Glazing U-Value(W/m².K) - West",None)
+                st.metric("West Glazing U-Value(W/m².K)",None)
             else:
                 if dts_glazing_U['U-Value Glazing'].iloc[3] > 5.8:
-                    st.metric("Glazing U-Value(W/m².K) - West",5.8)
+                    st.metric("West Glazing U-Value(W/m².K)",5.8)
                 elif Reference_Building_glazing_U_value < 1.5:
-                    st.metric("Glazing U-Value(W/m².K) - West",1.5)
+                    st.metric("West Glazing U-Value(W/m².K)",1.5)
                 else:
-                    st.metric("Glazing U-Value(W/m².K) - West", round(dts_glazing_U['U-Value Glazing'].iloc[3],2))
+                    st.metric("West Glazing U-Value(W/m².K)", round(dts_glazing_U['U-Value Glazing'].iloc[3],2))
         cols = st.columns(4)
         with cols[0]:
             if dts_shgc_single['SHGC'].iloc[0] > 0.81:
@@ -587,7 +623,7 @@ if st.session_state.get_hbjson is not None:
         with cols[1]:
             if dts_shgc_single['SHGC'].iloc[1] > 0.81:
                 st.metric("North Glazing SHGC",0.81)
-            elif dts_shgc_single['SHGC'].iloc[1] == np.inf:
+            elif dts_shgc_single['SHGC'].iloc[1] == 0:
                 st.metric("North Glazing SHGC",0)
             elif dts_shgc_single['SHGC'].iloc[1] < 0.16:
                 st.metric("North Glazing SHGC",0.16)
@@ -612,16 +648,133 @@ if st.session_state.get_hbjson is not None:
             else: 
                 st.metric("West Glazing SHGC",dts_shgc_single.iloc[3])
 
+        
+        cols = st.columns([5,1,5])
+
+        with cols[0]:
+            #Bar chart Wall glazing U value
+            wall_glazing_u_bar = go.Figure(data=[go.Bar(x=['East','North', 'South','West'],
+                                                    y=wall_glazing_u_value,marker_color='lightslategray')])
+        
+            wall_glazing_u_bar.update_layout(
+                        yaxis = dict(title = "Wall Glazing U-Value W/m².K"),
+                        shapes=[
+                            {
+                                'type': 'line',
+                                'xref': 'paper',
+                                'x0': 0,
+                                'y0': target_wall_glazing_U,
+                                'x1': 1,
+                                'y1': target_wall_glazing_U,
+                                'line': {
+                                    'color': 'rgb(50, 171, 96)',
+                                    'width': 2,
+                                    'dash': 'dash',
+                                },
+                            },
+                        ],
+                            )
+            wall_glazing_u_bar.add_annotation(
+                x=0
+                , y=target_wall_glazing_U
+                , text=f'DtS Threshold'
+                , yanchor='bottom'
+                , showarrow=True
+                , arrowhead=1
+                , arrowsize=1
+                , arrowwidth=2
+                , arrowcolor="#636363"
+                , ax=-20
+                , ay=-30
+                , font=dict(size=15, color="black", family="Arial")
+                , align="left"
+                ,)
+            
+            st.plotly_chart(wall_glazing_u_bar, use_container_width=True)
+        
+        with cols[1]:
+            ""
+
+        with cols[2]:
+            #Bar chart solar admittance
+            sa_bar = go.Figure(data=[go.Bar(x=list(solar_admittance.keys()),
+                                                        y=solar_admittance_single,marker_color='lightslategray')])
+            
+            sa_bar.update_layout(
+                        yaxis = dict(title = "Solar Admittance"), showlegend = False)
+            
+            sa_bar.add_trace(
+                go.Scatter(
+                    x=list(solar_admittance.keys()),
+                    y=list(solar_admittance.values()),
+                    name="DtS Threshold",
+                    mode='lines+markers',   
+                ),
+            )
+
+            sa_bar.add_annotation(
+                x=0
+                , y=solar_admittance['North']
+                , text=f'DtS Threshold'
+                , yanchor='bottom'
+                , showarrow=True
+                , arrowhead=1
+                , arrowsize=1
+                , arrowwidth=2
+                , arrowcolor="#636363"
+                , ax=-20
+                , ay=-30
+                , font=dict(size=15, color="black", family="Arial")
+                , align="right"
+                ,)
+            
+            st.plotly_chart(sa_bar, use_container_width=True)
+
+
         st.markdown('---')
         st.subheader("Method 2:")
-        cols = st.columns(2)
-        with cols[0]:  
+        cols = st.columns(3)
+        with cols[0]:
+            st.metric("Reference Building Wall U-value",round(Reference_Building_wall_U_value,2))
+        with cols[1]:  
             if Reference_Building_glazing_U_value > 5.8:
                 st.metric("Reference Building Glazing U-value",5.8)
             elif Reference_Building_glazing_U_value < 1.5:
                 st.metric("Reference Building Glazing U-value",1.5)
             else:
                 st.metric("Reference Building Glazing U-value",Reference_Building_glazing_U_value)
+        with cols[2]:
+            if dts_shgc_total > 0.81:
+                st.metric("Reference Building Glazing SHGC",0.81)
+            elif dts_shgc_total == np.inf:
+                st.metric("Reference Building Glazing SHGC",0)
+            elif dts_shgc_total < 0.16:
+                st.metric("Reference Building Glazing SHGC",0.16)
+            else:
+                st.metric("Reference Building Glazing SHGC",round(dts_shgc_total,2))
+
+        cols = st.columns([3,3,3])
+
+        with cols[0]:
+            #Bar chart Wall glazing U value total
+            wall_glazing_u_total_bar = go.Figure(data=[go.Bar(x=['Proposed Design','DtS Reference'],
+                                                    y=[wall_glazing_value_total,target_wall_glazing_U],marker_color=['lightgreen','lightslategray'])])
+            wall_glazing_u_total_bar.update_layout(
+                        yaxis = dict(title = "Wall Glazing U-Value W/m².K Total"))
+
+            st.plotly_chart(wall_glazing_u_total_bar, use_container_width=True)
+
         with cols[1]:
-            st.metric("Reference Building Glazing SHGC",round(dts_shgc_total,2))
-    
+            ""
+
+        with cols[2]:
+            #Bar chart AC energy total
+            AC_energy = go.Figure(data=[go.Bar(x=['Proposed Design','DtS Reference'],
+                                                    y=[proposed_ac_energy,reference_ac_energy],marker_color=['lightgreen','lightslategray'])])
+            AC_energy.update_layout(
+                        yaxis = dict(title = "AC Energy Value"))
+
+            st.plotly_chart(AC_energy, use_container_width=True)
+
+        with cols[2]:
+            ""
