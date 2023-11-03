@@ -12,3 +12,8 @@ ladybug-core
 lbt-honeybee
 ladybug-vtk
 vtk
+plotly
+docx
+datetime
+plotly
+numpy
