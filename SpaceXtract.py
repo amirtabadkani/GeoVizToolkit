@@ -1,6 +1,10 @@
-import json
+import io,json
 import pathlib
+from docx import Document
+from docx.shared import Inches,Mm,Pt
+import datetime
 from pathlib import Path
+import pandas as pd
 from pandas import DataFrame
 import math
 import numpy as np
@@ -21,9 +25,16 @@ st.set_page_config(page_title='SpaceXtract',
     layout="wide"
 )
 
+hide_st_style = """
+                <style>
+                #MainMenu {visibility: hidden;}
+                footer {visibility: hidden;}
+                </style>
+                """
+
 #Side BAR
 with st.sidebar:
-    st.image('./img/diagram.png',use_column_width='auto',output_format='PNG',
+    st.image('./img/SpaceXtract.png',use_column_width='auto',output_format='PNG',
              caption='This tool accepts .json files exported from Ladybyug-tools and will automatically extracts building envelope information. You can also export the 3D model into a .gem file for IES users. More features are to be developed!')
 
     st.header("User Control Panel:")
@@ -170,13 +181,13 @@ with st.sidebar:
     elif baseline_calc == 'ASHRAE Standard (US)':
         ""
 
-def model_info() -> DataFrame:
 
+if st.session_state.get_hbjson is not None:
     model = callback_once()
 
     #Extracting properties based on rooms
     model_data = {'Conditioning Status':[], 'Program Type': [], 'volume (m3)': [],'floor_area (m2)': [],'roof_area (m2)':[],  'exterior_wall_area (m2)': [],
-                  'exterior_aperture_area (m2)': [], 'exterior_skylight_area (m2)':[],'display_name':[]}
+                    'exterior_aperture_area (m2)': [], 'exterior_skylight_area (m2)':[],'display_name':[]}
 
     internal_srf_area = []
     room_id = []
@@ -204,24 +215,19 @@ def model_info() -> DataFrame:
     model_data['internal_wall_area (m2)'] = internal['Internal_Faces']
 
     model_shade = {'total_external_shades_area (m2)':[]}
-    
+
     for shade in model.outdoor_shades:
         model_shade['total_external_shades_area (m2)'].append(shade.area)
 
     model_shade = DataFrame.from_dict(model_shade).sum()
 
-    return model_data, model_shade
-
-#Extracting room index based on facade calc methodology
-def facade_calc() -> DataFrame:
-
-    model = callback_once()
+    #Extracting room index based on facade calc methodology
 
     target_rooms_index = []
 
-    for i,room in enumerate(range(len(model_info()[0].index))):
+    for i,room in enumerate(range(len(model_data.index))):
         
-        if (area_calc_method == 'Conditioned Zones') and (model_info()[0]['Conditioning Status'].iloc[room] == True):
+        if (area_calc_method == 'Conditioned Zones') and (model_data['Conditioning Status'].iloc[room] == True):
             target_rooms_index.append(i)
             
         elif area_calc_method == 'Entire Building':
@@ -262,10 +268,10 @@ def facade_calc() -> DataFrame:
                 elif (aper_azimuth > 225) and (aper_azimuth <= 315):
                     aperture_area_west.append(model.rooms[room_index].exterior_apertures[aperture].area)
                     
-        aperture_orientation['North'] = sum(aperture_area_north)
-        aperture_orientation['East'] = sum(aperture_area_east)
-        aperture_orientation['South'] = sum(aperture_area_south)
-        aperture_orientation['West'] = sum(aperture_area_west)
+        aperture_orientation['North'] = round(sum(aperture_area_north),2)
+        aperture_orientation['East'] = round(sum(aperture_area_east),2)
+        aperture_orientation['South'] = round(sum(aperture_area_south),2)
+        aperture_orientation['West'] = round(sum(aperture_area_west),2)
         model_apertures = DataFrame.from_dict([aperture_orientation]).transpose()
         model_apertures.rename(columns = {0:'Aperture Area (m2)'}, inplace= True)
         model_apertures = model_apertures.sort_index()
@@ -277,19 +283,19 @@ def facade_calc() -> DataFrame:
 
                 if vert_face_azimuth <= 45 or vert_face_azimuth > 315:
                     face_orientation.append('North')
-                    vert_face_area.append(model.rooms[room_index].faces[face].area)
+                    vert_face_area.append(round(model.rooms[room_index].faces[face].area,2))
 
                 elif vert_face_azimuth > 45 and vert_face_azimuth <= 135:
                     face_orientation.append('East')                                
-                    vert_face_area.append(model.rooms[room_index].faces[face].area)
+                    vert_face_area.append(round(model.rooms[room_index].faces[face].area,2))
 
                 elif vert_face_azimuth > 135 and vert_face_azimuth <= 225:
                     face_orientation.append('South')
-                    vert_face_area.append(model.rooms[room_index].faces[face].area)
+                    vert_face_area.append(round(model.rooms[room_index].faces[face].area,2))
             
                 elif vert_face_azimuth > 225 and vert_face_azimuth <= 315:
                     face_orientation.append('West')
-                    vert_face_area.append(model.rooms[room_index].faces[face].area)
+                    vert_face_area.append(round(model.rooms[room_index].faces[face].area,2))
 
             model_faces_vertical = DataFrame([face_orientation,vert_face_area]).transpose()
             model_faces_vertical.rename(columns = {0:'Face Orientation', 1:'Face Area (m2)'}, inplace= True)
@@ -301,17 +307,19 @@ def facade_calc() -> DataFrame:
             if model.rooms[room_index].faces[face].type.name == 'RoofCeiling':
                 horiz_face_area = model.rooms[room_index].faces[face].area
                 roof_faces_area.append(round(horiz_face_area,2))
-                model_roof['Roof Area (m2)'] = roof_faces_area
+                
             if model.rooms[room_index].faces[face].type.name == 'Floor': #if there is any exposed floor, if not returns 0
                 horiz_face_area = model.rooms[room_index].faces[face].area
                 floor_faces_area.append(round(horiz_face_area,2))
-                model_floor['Floor Area (m2)'] = floor_faces_area
+                
         
-        model_faces_vertical['ExWall Area (m2)'] = model_faces_vertical['Face Area (m2)'] - model_apertures['Aperture Area (m2)']
-        model_faces_vertical['WWR'] = (model_apertures['Aperture Area (m2)'] / model_faces_vertical['Face Area (m2)'])*100
-        model_faces_vertical['WWR'].fillna(0, inplace=True)    
-        
-    return target_rooms_index, model_apertures, model_faces_vertical, DataFrame.from_dict(model_roof).sum(), DataFrame.from_dict(model_floor).sum()
+        model_faces_vertical['ExWall Area (m2)'] = round(model_faces_vertical['Face Area (m2)'] - model_apertures['Aperture Area (m2)'],2)
+        model_faces_vertical['WWR (%)'] = round((model_apertures['Aperture Area (m2)'] / model_faces_vertical['Face Area (m2)'])*100,2)
+        model_faces_vertical['WWR (%)'].fillna(0, inplace=True)
+        model_roof['Roof Area (m2)'] = roof_faces_area    
+        model_roof_DF= DataFrame.from_dict(model_roof).sum()
+        model_floor['Floor Area (m2)'] = floor_faces_area
+        model_floor_DF = DataFrame.from_dict(model_floor).sum()
 
  
 
@@ -319,8 +327,8 @@ if st.session_state.get_hbjson is not None:
     #Building Relative Compactness (RC) = 6 * Building Volume (V) ^ 2/3 / Building Surface Area (A)
     ##Source: https://www.sciencedirect.com/science/article/abs/pii/S037877881400574X?via%3Dihub
 
-    building_volume = model_info()[0]['volume (m3)'].sum()
-    Building_area = model_info()[0][['floor_area (m2)','roof_area (m2)','exterior_wall_area (m2)','exterior_aperture_area (m2)','exterior_skylight_area (m2)']].sum().sum() #internal walls excluded 
+    building_volume = model_data['volume (m3)'].sum()
+    Building_area = model_data[['floor_area (m2)','roof_area (m2)','exterior_wall_area (m2)','exterior_aperture_area (m2)','exterior_skylight_area (m2)']].sum().sum() #internal walls excluded 
 
     build_RC = (6 * (pow(building_volume,2/3))) / Building_area
 
@@ -330,50 +338,50 @@ if st.session_state.get_hbjson is not None:
 
     st.subheader(f'**Building General Details**')
     
-    if model_info()[0].index.nunique() != len(model_info()[0].index): #Checking room names similarity for internal walls calculations
+    if model_data.index.nunique() != len(model_data.index): #Checking room names similarity for internal walls calculations
         st.warning("There are similar room names in the model which will cause in inaccurate internal wall surface areas calculations! Please fix them before uploading the model.")
     else:
         ""
-    st.dataframe(model_info()[0], use_container_width=True)
+    st.dataframe(model_data, use_container_width=True)
     st.markdown('---')
     
     st.subheader(f'**Thermal Envelope Area Calculation Based on {area_calc_method}**')
     
-    if facade_calc()[0] == []:
+    if target_rooms_index == []:
         st.subheader(":red[OOPS! NO CONDITIONED ZONES ARE ASSIGENED IN THE MODEL!]")
     else:
         cols = st.columns(4)
 
         with cols[0]:
-            st.dataframe(model_info()[1], use_container_width=True)
+            st.dataframe(model_shade, use_container_width=True)
             
-            col_wwr = st.columns(len(facade_calc()[2].index))
+            col_wwr = st.columns(len(model_faces_vertical.index))
 
-            for metric in range(len(facade_calc()[2].index)):
+            for metric in range(len(model_faces_vertical.index)):
             
                 with col_wwr[metric]:
-                    st.metric(f"WWR-{facade_calc()[2].index[metric]}",f"{int(facade_calc()[2]['WWR'].iloc[metric])}%")
+                    st.metric(f"WWR-{model_faces_vertical.index[metric]}",f"{int(model_faces_vertical['WWR (%)'].iloc[metric])}%")
         
         with cols[1]:
-            st.dataframe(facade_calc()[1], use_container_width=True)
+            st.dataframe(model_apertures, use_container_width=True)
         with cols[2]:
-            st.dataframe(facade_calc()[2].drop(['Face Area (m2)','WWR'], axis = 1), use_container_width=True)
+            st.dataframe(model_faces_vertical.drop(['Face Area (m2)','WWR (%)'], axis = 1), use_container_width=True)
         with cols[3]:
-            st.dataframe(facade_calc()[3], use_container_width=True)
-            st.dataframe(facade_calc()[4], use_container_width=True)
+            st.dataframe(model_roof_DF, use_container_width=True)
+            st.dataframe(model_floor_DF, use_container_width=True)
 
     st.markdown('---')
 
 
 #DtS Facade Calculation NCC2019 (AUSTRALIA)
-if st.session_state.get_hbjson is not None:
+if st.session_state.get_hbjson is not None and target_rooms_index != []:
     if baseline_calc == 'Facade Calculator NCC 2019 (Australia)':
         st.header("Reference Building Fabric Performance - NCC19 Facade Calculator")
         
         #R Target
         R_target = []
         for i in range(0,4):
-            if facade_calc()[2]['WWR'].iloc[i] <= 20:
+            if model_faces_vertical['WWR (%)'].iloc[i] <= 20:
                 if bldg_classes[building_class] == 2 or bldg_classes[building_class] == 5 or bldg_classes[building_class] == 6 or bldg_classes[building_class] == 7 or bldg_classes[building_class] == 8 or bldg_classes[building_class] == '9b' or bldg_classes[building_class] == '9a':
                     if aus_climate_zone[climate_zone] == 2 or aus_climate_zone[climate_zone] == 3 or aus_climate_zone[climate_zone] == 4 or aus_climate_zone[climate_zone] == 5 or aus_climate_zone[climate_zone] == 6 or aus_climate_zone[climate_zone] == 7 or aus_climate_zone[climate_zone] == 8:
                         R_target.append(1.4)
@@ -388,15 +396,15 @@ if st.session_state.get_hbjson is not None:
                         R_target.append(2.8)
                     elif aus_climate_zone[climate_zone] == 8:
                         R_target.append(3.8)
-            elif facade_calc()[2]['WWR'].iloc[i] > 20:
+            elif model_faces_vertical['WWR (%)'].iloc[i] > 20:
                 R_target.append(1.0)
 
         Wall_U_Value = []
         for i in range(0,4):
-            if facade_calc()[2]['WWR'].iloc[i] <= 20 and 1/ex_wall_dts >= 1/R_target[i]:
+            if model_faces_vertical['WWR (%)'].iloc[i] <= 20 and 1/ex_wall_dts >= 1/R_target[i]:
                 Wall_U_Value.append(1/R_target[i]) 
             else:
-                if facade_calc()[2]['WWR'].iloc[i] > 20 and 1/ex_wall_dts >= 1/R_target[i]:
+                if model_faces_vertical['WWR (%)'].iloc[i] > 20 and 1/ex_wall_dts >= 1/R_target[i]:
                     Wall_U_Value.append(1/R_target[i])
                 else:
                     Wall_U_Value.append(1/ex_wall_dts)
@@ -424,28 +432,28 @@ if st.session_state.get_hbjson is not None:
         sum_UA = []
 
         for i in range(0,4):
-            x = (target_wall_glazing_U*facade_calc()[2]['Face Area (m2)'].iloc[i]-(Wall_U_Value[i]*(facade_calc()[2]['Face Area (m2)'].iloc[i]-facade_calc()[1]['Aperture Area (m2)'].iloc[i])))/facade_calc()[1]['Aperture Area (m2)'].iloc[i]
-            UA = ((1/ex_wall_dts)*facade_calc()[2]['ExWall Area (m2)'].iloc[i]) + (glass_u_dts*facade_calc()[1]['Aperture Area (m2)'].iloc[i])
-            sum_UA.append(((1/ex_wall_dts)*facade_calc()[2]['ExWall Area (m2)'].iloc[i]) + (glass_u_dts*facade_calc()[1]['Aperture Area (m2)'].iloc[i]))
-            wall_glazing_u_value.append(UA/facade_calc()[2]['Face Area (m2)'].iloc[i])
+            x = (target_wall_glazing_U*model_faces_vertical['Face Area (m2)'].iloc[i]-(Wall_U_Value[i]*(model_faces_vertical['Face Area (m2)'].iloc[i]-model_apertures['Aperture Area (m2)'].iloc[i])))/model_apertures['Aperture Area (m2)'].iloc[i]
+            UA = ((1/ex_wall_dts)*model_faces_vertical['ExWall Area (m2)'].iloc[i]) + (glass_u_dts*model_apertures['Aperture Area (m2)'].iloc[i])
+            sum_UA.append(((1/ex_wall_dts)*model_faces_vertical['ExWall Area (m2)'].iloc[i]) + (glass_u_dts*model_apertures['Aperture Area (m2)'].iloc[i]))
+            wall_glazing_u_value.append(round(UA/model_faces_vertical['Face Area (m2)'].iloc[i],2))
             
             if x == np.inf:
                 u_value_glazing.append(0) #Y66
             else:
                 u_value_glazing.append(x)
             #----
-            if facade_calc()[1]['Aperture Area (m2)'].iloc[i] == 0 :
+            if model_apertures['Aperture Area (m2)'].iloc[i] == 0 :
                 solar_admittance_single.append(0)
-            elif facade_calc()[1]['Aperture Area (m2)'].iloc[i] > 0 :
-                solar_admittance_single.append((shading_multi*glass_shgc_dts*facade_calc()[1]['Aperture Area (m2)'].iloc[i]) / facade_calc()[2]['Face Area (m2)'].iloc[i])
+            elif model_apertures['Aperture Area (m2)'].iloc[i] > 0 :
+                solar_admittance_single.append(round((shading_multi*glass_shgc_dts*model_apertures['Aperture Area (m2)'].iloc[i]) / model_faces_vertical['Face Area (m2)'].iloc[i],2))
 
     
-        dts_glazing_U = DataFrame([u_value_glazing,facade_calc()[1]['Aperture Area (m2)'].values]).transpose()
+        dts_glazing_U = DataFrame([u_value_glazing,model_apertures['Aperture Area (m2)'].values]).transpose()
         dts_glazing_U.rename(columns = {0:'U-Value Glazing', 1:'Vision Area'},index = {0:'East',1:'North',2:'South',3:'West'}, inplace= True)
         
-        dts_glazing_U['Area Weighted U-value Glazing'] = dts_glazing_U['U-Value Glazing']*facade_calc()[1]['Aperture Area (m2)']
-        Reference_Building_glazing_U_value = round(dts_glazing_U['Area Weighted U-value Glazing'].sum()/facade_calc()[1]['Aperture Area (m2)'].sum(),2)
-        Reference_Building_wall_U_value = (Wall_U_Value[0]*facade_calc()[2]['ExWall Area (m2)'].iloc[0]+Wall_U_Value[1]*facade_calc()[2]['ExWall Area (m2)'].iloc[1]+Wall_U_Value[2]*facade_calc()[2]['ExWall Area (m2)'].iloc[2]+Wall_U_Value[3]*facade_calc()[2]['ExWall Area (m2)'].iloc[3]) / facade_calc()[2]['ExWall Area (m2)'].sum()
+        dts_glazing_U['Area Weighted U-value Glazing'] = dts_glazing_U['U-Value Glazing']*model_apertures['Aperture Area (m2)']
+        Reference_Building_glazing_U_value = round(dts_glazing_U['Area Weighted U-value Glazing'].sum()/model_apertures['Aperture Area (m2)'].sum(),2)
+        Reference_Building_wall_U_value = (Wall_U_Value[0]*model_faces_vertical['ExWall Area (m2)'].iloc[0]+Wall_U_Value[1]*model_faces_vertical['ExWall Area (m2)'].iloc[1]+Wall_U_Value[2]*model_faces_vertical['ExWall Area (m2)'].iloc[2]+Wall_U_Value[3]*model_faces_vertical['ExWall Area (m2)'].iloc[3]) / model_faces_vertical['ExWall Area (m2)'].sum()
 
         #Solar admittancce targets
         if bldg_classes[building_class] == 2 or bldg_classes[building_class] == 5 or bldg_classes[building_class] == 6 or bldg_classes[building_class] == 7 or bldg_classes[building_class] == 8 or bldg_classes[building_class] == '9b' or bldg_classes[building_class] == '9a':
@@ -505,10 +513,10 @@ if st.session_state.get_hbjson is not None:
             
         
         
-        dts_shgc_single = {'East':[round(solar_admittance['East']/(shading_multi*(facade_calc()[2]['WWR'].iloc[0]/100)),2)],
-                    'North':[round(solar_admittance['North']/(shading_multi*(facade_calc()[2]['WWR'].iloc[1]/100)),2)],
-                    'South':[round(solar_admittance['South']/(shading_multi*(facade_calc()[2]['WWR'].iloc[2]/100)),2)],
-                    'West':[round(solar_admittance['West']/(shading_multi*(facade_calc()[2]['WWR'].iloc[3]/100)),2)]}
+        dts_shgc_single = {'East':[round(solar_admittance['East']/(shading_multi*(model_faces_vertical['WWR (%)'].iloc[0]/100)),2)],
+                    'North':[round(solar_admittance['North']/(shading_multi*(model_faces_vertical['WWR (%)'].iloc[1]/100)),2)],
+                    'South':[round(solar_admittance['South']/(shading_multi*(model_faces_vertical['WWR (%)'].iloc[2]/100)),2)],
+                    'West':[round(solar_admittance['West']/(shading_multi*(model_faces_vertical['WWR (%)'].iloc[3]/100)),2)]}
         
         
         dts_shgc_single = DataFrame.from_dict(dts_shgc_single).transpose()
@@ -516,48 +524,48 @@ if st.session_state.get_hbjson is not None:
         
 
         #SA COE based on WWR%
-        if facade_calc()[2]['WWR'].iloc[0] < 20: #East
+        if model_faces_vertical['WWR (%)'].iloc[0] < 20: #East
             solar_admittance_weight_coe_east = 0
-        elif facade_calc()[2]['WWR'].iloc[0] >= 20:
+        elif model_faces_vertical['WWR (%)'].iloc[0] >= 20:
             solar_admittance_weight_coe_east = solar_admittance_weight_coe['East']
-        if facade_calc()[2]['WWR'].iloc[1] < 20: #North
+        if model_faces_vertical['WWR (%)'].iloc[1] < 20: #North
             solar_admittance_weight_coe_north = 0
-        elif facade_calc()[2]['WWR'].iloc[1] >= 20:
+        elif model_faces_vertical['WWR (%)'].iloc[1] >= 20:
             solar_admittance_weight_coe_north = solar_admittance_weight_coe['North']
-        if facade_calc()[2]['WWR'].iloc[2] < 20: #South
+        if model_faces_vertical['WWR (%)'].iloc[2] < 20: #South
             solar_admittance_weight_coe_south = 0
-        elif facade_calc()[2]['WWR'].iloc[2] >= 20:
+        elif model_faces_vertical['WWR (%)'].iloc[2] >= 20:
             solar_admittance_weight_coe_south = solar_admittance_weight_coe['South']
-        if facade_calc()[2]['WWR'].iloc[3] < 20: #West
+        if model_faces_vertical['WWR (%)'].iloc[3] < 20: #West
             solar_admittance_weight_coe_west = 0
-        elif facade_calc()[2]['WWR'].iloc[3] >= 20:
+        elif model_faces_vertical['WWR (%)'].iloc[3] >= 20:
             solar_admittance_weight_coe_west = solar_admittance_weight_coe['West']
         
         #SA based on aperture existance
-        if facade_calc()[2]['WWR'].iloc[0] == 0: #East
-            SA_east = 0
-        elif facade_calc()[2]['WWR'].iloc[0] >= 20:
+        if model_faces_vertical['WWR (%)'].iloc[0] == 0: #East
+            solar_admittance_weight_coe_east = 0
+        elif model_faces_vertical['WWR (%)'].iloc[0] >= 20:
             solar_admittance_weight_coe_east = solar_admittance_weight_coe['East']
-        if facade_calc()[2]['WWR'].iloc[1] < 20: #North
+        if model_faces_vertical['WWR (%)'].iloc[1] < 20: #North
             solar_admittance_weight_coe_north = 0
-        elif facade_calc()[2]['WWR'].iloc[1] >= 20:
+        elif model_faces_vertical['WWR (%)'].iloc[1] >= 20:
             solar_admittance_weight_coe_north = solar_admittance_weight_coe['North']
-        if facade_calc()[2]['WWR'].iloc[2] < 20: #South
+        if model_faces_vertical['WWR (%)'].iloc[2] < 20: #South
             solar_admittance_weight_coe_south = 0
-        elif facade_calc()[2]['WWR'].iloc[2] >= 20:
+        elif model_faces_vertical['WWR (%)'].iloc[2] >= 20:
             solar_admittance_weight_coe_south = solar_admittance_weight_coe['South']
-        if facade_calc()[2]['WWR'].iloc[3] < 20: #West
+        if model_faces_vertical['WWR (%)'].iloc[3] < 20: #West
             solar_admittance_weight_coe_west = 0
-        elif facade_calc()[2]['WWR'].iloc[3] >= 20:
+        elif model_faces_vertical['WWR (%)'].iloc[3] >= 20:
             solar_admittance_weight_coe_west = solar_admittance_weight_coe['West']
 
 
 
         #Total Values
-        reference_ac_energy = facade_calc()[2]['Face Area (m2)'].iloc[0]*solar_admittance_weight_coe_east*solar_admittance['East']+facade_calc()[2]['Face Area (m2)'].iloc[1]*solar_admittance_weight_coe_north*solar_admittance['North']+facade_calc()[2]['Face Area (m2)'].iloc[2]*solar_admittance_weight_coe_south*solar_admittance['South']+facade_calc()[2]['Face Area (m2)'].iloc[3]*solar_admittance_weight_coe_east*solar_admittance['West']
+        reference_ac_energy = model_faces_vertical['Face Area (m2)'].iloc[0]*solar_admittance_weight_coe_east*solar_admittance['East'] + model_faces_vertical['Face Area (m2)'].iloc[1]*solar_admittance_weight_coe_north*solar_admittance['North'] + model_faces_vertical['Face Area (m2)'].iloc[2]*solar_admittance_weight_coe_south*solar_admittance['South'] + model_faces_vertical['Face Area (m2)'].iloc[3]*solar_admittance_weight_coe_west*solar_admittance['West']
         dts_shgc_total = reference_ac_energy/((solar_admittance_weight_coe_east*dts_glazing_U['Vision Area'].iloc[0]*shading_multi)+(solar_admittance_weight_coe_north*dts_glazing_U['Vision Area'].iloc[1]*shading_multi)+(solar_admittance_weight_coe_south*dts_glazing_U['Vision Area'].iloc[2]*shading_multi)+(solar_admittance_weight_coe_west*dts_glazing_U['Vision Area'].iloc[3]*shading_multi))
-        wall_glazing_value_total = sum(sum_UA) / facade_calc()[2]['Face Area (m2)'].sum()
-        proposed_ac_energy = facade_calc()[2]['Face Area (m2)'].iloc[0]*solar_admittance_weight_coe_east*solar_admittance_single[0]+facade_calc()[2]['Face Area (m2)'].iloc[1]*solar_admittance_weight_coe_north*solar_admittance_single[1]+facade_calc()[2]['Face Area (m2)'].iloc[2]*solar_admittance_weight_coe_south*solar_admittance_single[2]+facade_calc()[2]['Face Area (m2)'].iloc[3]*solar_admittance_weight_coe_west*solar_admittance_single[3]
+        wall_glazing_value_total = sum(sum_UA) / model_faces_vertical['Face Area (m2)'].sum()
+        proposed_ac_energy = model_faces_vertical['Face Area (m2)'].iloc[0]*solar_admittance_weight_coe_east*solar_admittance_single[0]+model_faces_vertical['Face Area (m2)'].iloc[1]*solar_admittance_weight_coe_north*solar_admittance_single[1]+model_faces_vertical['Face Area (m2)'].iloc[2]*solar_admittance_weight_coe_south*solar_admittance_single[2]+model_faces_vertical['Face Area (m2)'].iloc[3]*solar_admittance_weight_coe_west*solar_admittance_single[3]
 
         st.subheader("Method 1:")
         cols = st.columns(4)
@@ -648,13 +656,23 @@ if st.session_state.get_hbjson is not None:
             else: 
                 st.metric("West Glazing SHGC",dts_shgc_single.iloc[3])
 
-        
+        def CheckForLess(list, val):
+ 
+                # traverse in the list
+                for x in list:
+
+                    # compare with all the
+                    # values with value
+                    if val <= x:
+                        return False
+                return True
+
         cols = st.columns([5,1,5])
 
         with cols[0]:
             #Bar chart Wall glazing U value
             wall_glazing_u_bar = go.Figure(data=[go.Bar(x=['East','North', 'South','West'],
-                                                    y=wall_glazing_u_value,marker_color='lightslategray')])
+                                                    y=wall_glazing_u_value,marker_color='lightslategray',text=wall_glazing_u_value)])
         
             wall_glazing_u_bar.update_layout(
                         yaxis = dict(title = "Wall Glazing U-Value W/m².K"),
@@ -691,14 +709,24 @@ if st.session_state.get_hbjson is not None:
                 ,)
             
             st.plotly_chart(wall_glazing_u_bar, use_container_width=True)
-        
+            wall_glazing_u_bar.write_image("wall_glazing_u_bar.png")
+
+
+            if (CheckForLess(wall_glazing_u_value, target_wall_glazing_U)):
+                st.subheader("**:green[Compliant Solution]**")
+                method1_wall_glazing = 'Compliant Solution'
+            else:
+                st.subheader("**:red[Non-Compliant Solution]**")
+                method1_wall_glazing = 'Non-Compliant Solution'
+                st.markdown("**Recommendation: Increasing  external wall r-value OR reducing glass U-value**")
+
         with cols[1]:
             ""
 
         with cols[2]:
             #Bar chart solar admittance
             sa_bar = go.Figure(data=[go.Bar(x=list(solar_admittance.keys()),
-                                                        y=solar_admittance_single,marker_color='lightslategray')])
+                                                        y=solar_admittance_single,marker_color='lightslategray',text=solar_admittance_single)])
             
             sa_bar.update_layout(
                         yaxis = dict(title = "Solar Admittance"), showlegend = False)
@@ -729,9 +757,16 @@ if st.session_state.get_hbjson is not None:
                 ,)
             
             st.plotly_chart(sa_bar, use_container_width=True)
+            sa_bar.write_image("sa_bar.png")
 
+            if solar_admittance_single <= list(solar_admittance.values()):
+                st.subheader("**:green[Compliant Solution]**")
+                method1_sa = 'Compliant Solution'
+            else:
+                st.subheader("**:red[Non-Compliant Solution]**")
+                method1_sa = 'Non-Compliant Solution'
+                st.markdown("**Recommendation: Reducing glass SHGC**")
 
-        st.markdown('---')
         st.subheader("Method 2:")
         cols = st.columns(3)
         with cols[0]:
@@ -758,11 +793,20 @@ if st.session_state.get_hbjson is not None:
         with cols[0]:
             #Bar chart Wall glazing U value total
             wall_glazing_u_total_bar = go.Figure(data=[go.Bar(x=['Proposed Design','DtS Reference'],
-                                                    y=[wall_glazing_value_total,target_wall_glazing_U],marker_color=['lightgreen','lightslategray'])])
+                                                    y=[round(wall_glazing_value_total,2),target_wall_glazing_U],marker_color=['lightgreen','lightslategray'],text=[round(wall_glazing_value_total,2),target_wall_glazing_U])])
             wall_glazing_u_total_bar.update_layout(
                         yaxis = dict(title = "Wall Glazing U-Value W/m².K Total"))
 
             st.plotly_chart(wall_glazing_u_total_bar, use_container_width=True)
+            wall_glazing_u_total_bar.write_image("wall_glazing_u_total_bar.png")
+
+            if wall_glazing_value_total <= target_wall_glazing_U:
+                st.subheader("**:green[Compliant Solution]**")
+                method2_wall_glazing = 'Compliant Solution'
+            else:
+                st.subheader("**:red[Non-Compliant Solution]**")
+                method2_wall_glazing = 'Non-Compliant Solution'
+                st.markdown("**Recommendation: Increasing  external wall r-value OR reducing glass U-value**")
 
         with cols[1]:
             ""
@@ -770,11 +814,122 @@ if st.session_state.get_hbjson is not None:
         with cols[2]:
             #Bar chart AC energy total
             AC_energy = go.Figure(data=[go.Bar(x=['Proposed Design','DtS Reference'],
-                                                    y=[proposed_ac_energy,reference_ac_energy],marker_color=['lightgreen','lightslategray'])])
+                                                    y=[round(proposed_ac_energy,2),round(reference_ac_energy,2)],marker_color=['lightgreen','lightslategray'],text=[round(proposed_ac_energy,2),round(reference_ac_energy,2)])])
             AC_energy.update_layout(
                         yaxis = dict(title = "AC Energy Value"))
 
             st.plotly_chart(AC_energy, use_container_width=True)
+            AC_energy.write_image("AC_energy.png")
+
+            if proposed_ac_energy <= reference_ac_energy:
+                st.subheader("**:green[Compliant Solution]**")
+                method2_ac_energy = 'Compliant Solution'
+            else:
+                st.subheader("**:red[Non-Compliant Solution]**")
+                method2_ac_energy  = 'Non-Compliant Solution'
+                st.markdown("**Recommendation: Reducing glass SHGC**")
+        
 
         with cols[2]:
             ""
+    #Generating the report
+    if method1_wall_glazing == 'Compliant Solution' and method1_sa == 'Compliant Solution':
+        method1_compliance = 'Compliant Solution'
+    else:
+        method1_compliance = 'Non-Compliant Solution'
+
+    if method2_wall_glazing == 'Compliant Solution' and method2_ac_energy == 'Compliant Solution':
+        method2_compliance = 'Compliant Solution'
+    else:
+        method2_compliance = 'Non-Compliant Solution'
+
+    NCC19 = Document()
+    section = NCC19.sections[0]
+    section.page_height = Mm(350)
+    section.page_width = Mm(297)
+    section.left_margin = Mm(20)
+    section.right_margin = Mm(20)
+    section.top_margin = Mm(25.4)
+    section.bottom_margin = Mm(25.4)
+    section.header_distance = Mm(12.7)
+    section.footer_distance = Mm(12.7)
+    style = NCC19.styles['Normal']
+    font = style.font
+    font.name = 'Arial'
+    font.size = Pt(12)
+
+    x = 2.5
+    h_res = x
+    w_res = 2*x
+
+    cols = st.columns(4)
+    with cols[0]:
+        project_name = st.text_input("**Building Name / Address:**", value = f'{callback_once().display_name}')
+    with cols[1]:
+        name = st.text_input("**Your Name / Position:**", value = 'Your Name/Position is required!')
+    with cols[2]:
+        today = datetime.datetime.now()
+        Date = st.date_input("**Date:**", value = today)
+    with cols[3]:
+        levels = st.text_input("**Storeys Above Ground:**", value = 1)
+
+    header = NCC19.sections[0].header
+
+    header.paragraphs[0].text = f'NCC19 Facade Calculator | Date: {Date} | Approved by: {name}'
+    NCC19.add_heading(f'NCC 2019 DtS Project Summary for {project_name}', 0)
+    NCC19.add_paragraph('The summary below provides an overview of where compliance has been achieved for Specification J1.5a - Calculation of U-Value and solar admittance - Method 1 (Single Aspect) and Method 2 (Multiple Apects).')
+    NCC19.add_paragraph(f'This {building_class} located in {building_state} with a {climate_zone} in {levels} level(s)')
+    
+    paragraph = NCC19.add_paragraph()
+    entire_model = pd.concat([round(model_faces_vertical,2),round(model_apertures,2)], axis = 1)
+    entire_model.reset_index(inplace = True)
+    entire_model.rename(columns={'index':'Face Direction'}, inplace= True)
+    t = NCC19.add_table(entire_model.shape[0]+1, entire_model.shape[1])
+
+    # Adding style to a table 
+    t.style = 'Medium Shading 1'
+
+    # add the header rows.
+    for j in range(entire_model.shape[-1]):
+        t.cell(0,j).text = entire_model.columns[j]
+
+    # add the rest of the data frame
+    for i in range(entire_model.shape[0]):
+        for j in range(entire_model.shape[-1]):
+            t.cell(i+1,j).text = str(entire_model.values[i,j])
+
+
+    NCC19.add_heading('METHOD 1:', 1)
+    paragraph = NCC19.add_paragraph()
+    run = paragraph.add_run()
+    run.add_picture('wall_glazing_u_bar.png', width=Inches(w_res), height= Inches(h_res))
+    run_2 = paragraph.add_run()
+    run_2.add_picture('sa_bar.png', width=Inches(w_res), height= Inches(h_res))
+    
+    NCC19.add_heading('METHOD 2:', 1)
+    paragraph = NCC19.add_paragraph()
+    run = paragraph.add_run()
+    run.add_picture('wall_glazing_u_total_bar.png', width=Inches(w_res), height= Inches(h_res))
+    run_2 = paragraph.add_run()
+    run_2.add_picture('AC_energy.png', width=Inches(w_res), height= Inches(h_res))
+
+
+    p0 = NCC19.add_paragraph(f'The proposed thermal envelope performance includes an External Wall R-value of ')
+    
+    p0.add_run(f'{ex_wall_dts}, and Glass U-value & SHGC of {glass_u_dts} / {glass_shgc_dts}').bold= True
+    p0.add_run(' which indicates the proposed design as ')
+    p0.add_run(f'{method1_compliance}').bold= True
+    p0.add_run(' against NCC19 DtS Reference Method 1, and ')
+    p0.add_run(f'{method2_compliance}').bold= True
+    p0.add_run(' against NCC19 DtS Reference Method 2.')
+
+    # NCC19.add_heading(f'Project Details', 1)
+
+    buffer = io.BytesIO()
+    NCC19.save(buffer)
+    export_as_word = st.download_button(
+            label="Generate NCC19 Facade Calculator Report.docx",
+            data=buffer,
+            file_name=f'NCC19 Glass Facade Calculator - {project_name}.docx',
+            mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
