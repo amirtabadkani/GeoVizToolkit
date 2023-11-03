@@ -10,8 +10,7 @@ pollination-streamlit-io
 pollination-streamlit
 ladybug-core
 lbt-honeybee
-ladybug-vtk
-vtk
+vtkjs
 plotly
 python-docx
 datetime
