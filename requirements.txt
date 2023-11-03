@@ -13,6 +13,6 @@ lbt-honeybee
 ladybug-vtk
 vtk
 plotly
-docx
+python-docx
 datetime
 numpy
