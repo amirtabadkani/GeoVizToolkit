@@ -42,13 +42,13 @@ with st.sidebar:
     north_ = st.number_input("**North Angle (90° by default):**", -180,180, 90 , 1, key = 'north',help = "Counter-Clockwise for Negative Values, Clockwise for Positive Values")
     vectors = [math.cos(math.radians(north_)), math.sin(math.radians(north_))]
     
+    solve_adjacency = st.checkbox("Solve Adjacencies Between Rooms", help = "In case you have not done this before uploading the model, Please check this box to calculate the internal wall surface areas correctly!")
 
 #MAIN PAGE
 st.title("SpaceXtract")
 st.subheader("Before uploading, please check the following items:")
 st.markdown("**1- Each room should have unique names to calculate the internal wall surface areas accurately!**")
-st.markdown("**2- Boundary conditions of adjacent surfaces should be done prior to use the tool, otherwise external wall surface areas will include internal walls!**")
-st.markdown("**3- If you are interested to calculate the conditioned spaces only, they should be set as conditioned in the model!**")
+st.markdown("**2- If you are interested to calculate the conditioned spaces only, they should be set as conditioned in the model!**")
 
 st.subheader("Upload .hbjson Model:")
 
@@ -88,10 +88,16 @@ def show_model(hbjson_path: Path):
 def callback_once():
     if 'hbjson' in st.session_state.get_hbjson:
         hb_model = HBModel.from_dict(st.session_state.get_hbjson['hbjson'])
+        
+        if solve_adjacency:
+            hb_model.solve_adjacency(intersect=True, overwrite=False, air_boundary=False, adiabatic=False, tolerance=None, angle_tolerance=None)
+    
         if hb_model:
             hbjson_path = st.session_state.temp.joinpath(f'{hb_model.identifier}.hbjson')
             hbjson_path.write_text(json.dumps(hb_model.to_dict()))
             show_model(hbjson_path)
+        
+       
     return hb_model
 
 
@@ -127,6 +133,8 @@ if st.session_state.get_hbjson is not None:
             data=callback_once().to.idf(callback_once())
             with open(f'./idf/{callback_once().display_name}.idf', 'w') as file:
                 file.write(data)
+
+    
 else:
     st.info('Load a model!')
 
@@ -134,9 +142,9 @@ else:
 
 with st.sidebar:
 
-    area_calc_method = st.radio("**Select the Facade Area Calculation Methodology**", options = ['Conditioned Zones', 'Entire Building'])
+    area_calc_method = st.radio("**Facade Area Calculation Methodology:**", options = ['Conditioned Zones', 'Entire Building'])
 
-    baseline_calc = st.radio("**Select the Baseline Energy Calculation Methodology**", options = ['None','Facade Calculator NCC 2019 (Australia)', 'ASHRAE 90.1 Guidelines', 'PassivHause Standard'])
+    baseline_calc = st.radio("**Thermal Envelope Baseline:**", options = ['None','Facade Calculator NCC 2019 (Australia)', 'ASHRAE 90.1 Guidelines', 'PassivHause Standard'])
 
     bldg_classes = {'Class 2 - apartment building (Common Area)':2,
     'Class 3 - student accommodation':3,
@@ -317,7 +325,7 @@ if st.session_state.get_hbjson is not None:
         model_faces_vertical['WWR (%)'] = round((model_apertures['Aperture Area (m2)'] / model_faces_vertical['Face Area (m2)'])*100,2)
         model_faces_vertical['WWR (%)'].fillna(0, inplace=True)
         model_roof['Roof Area (m2)'] = roof_faces_area    
-        model_roof_DF= DataFrame.from_dict(model_roof).sum()
+        model_roof_DF = DataFrame.from_dict(model_roof).sum()
         model_floor['Floor Area (m2)'] = floor_faces_area
         model_floor_DF = DataFrame.from_dict(model_floor).sum()
 
@@ -656,7 +664,7 @@ if st.session_state.get_hbjson is not None and target_rooms_index != []:
             else: 
                 st.metric("West Glazing SHGC",dts_shgc_single.iloc[3])
 
-        def CheckForLess(list, val):
+        def CheckForLess_WallGlazing(list, val):
  
                 # traverse in the list
                 for x in list:
@@ -665,6 +673,18 @@ if st.session_state.get_hbjson is not None and target_rooms_index != []:
                     # values with value
                     if val <= x:
                         return False
+                return True
+        
+        def CheckForLess_SA(list1, list2):
+ 
+                # traverse in the list
+                for x in list1:
+                    for y in list2:
+
+                        # compare with all the
+                        # values with value
+                        if y <= x:
+                            return False
                 return True
 
         cols = st.columns([5,1,5])
@@ -712,7 +732,7 @@ if st.session_state.get_hbjson is not None and target_rooms_index != []:
             wall_glazing_u_bar.write_image("wall_glazing_u_bar.png")
 
 
-            if (CheckForLess(wall_glazing_u_value, target_wall_glazing_U)):
+            if (CheckForLess_WallGlazing(wall_glazing_u_value, target_wall_glazing_U)):
                 st.subheader("**:green[Compliant Solution]**")
                 method1_wall_glazing = 'Compliant Solution'
             else:
@@ -758,8 +778,8 @@ if st.session_state.get_hbjson is not None and target_rooms_index != []:
             
             st.plotly_chart(sa_bar, use_container_width=True)
             sa_bar.write_image("sa_bar.png")
-
-            if solar_admittance_single <= list(solar_admittance.values()):
+            
+            if CheckForLess_SA(solar_admittance_single,list(solar_admittance.values())):
                 st.subheader("**:green[Compliant Solution]**")
                 method1_sa = 'Compliant Solution'
             else:
@@ -821,6 +841,7 @@ if st.session_state.get_hbjson is not None and target_rooms_index != []:
             st.plotly_chart(AC_energy, use_container_width=True)
             AC_energy.write_image("AC_energy.png")
 
+            
             if proposed_ac_energy <= reference_ac_energy:
                 st.subheader("**:green[Compliant Solution]**")
                 method2_ac_energy = 'Compliant Solution'
@@ -833,103 +854,103 @@ if st.session_state.get_hbjson is not None and target_rooms_index != []:
         with cols[2]:
             ""
     #Generating the report
-    if method1_wall_glazing == 'Compliant Solution' and method1_sa == 'Compliant Solution':
-        method1_compliance = 'Compliant Solution'
-    else:
-        method1_compliance = 'Non-Compliant Solution'
+        if method1_wall_glazing == 'Compliant Solution' and method1_sa == 'Compliant Solution':
+            method1_compliance = 'Compliant Solution'
+        else:
+            method1_compliance = 'Non-Compliant Solution'
 
-    if method2_wall_glazing == 'Compliant Solution' and method2_ac_energy == 'Compliant Solution':
-        method2_compliance = 'Compliant Solution'
-    else:
-        method2_compliance = 'Non-Compliant Solution'
+        if method2_wall_glazing == 'Compliant Solution' and method2_ac_energy == 'Compliant Solution':
+            method2_compliance = 'Compliant Solution'
+        else:
+            method2_compliance = 'Non-Compliant Solution'
 
-    NCC19 = Document()
-    section = NCC19.sections[0]
-    section.page_height = Mm(350)
-    section.page_width = Mm(297)
-    section.left_margin = Mm(20)
-    section.right_margin = Mm(20)
-    section.top_margin = Mm(25.4)
-    section.bottom_margin = Mm(25.4)
-    section.header_distance = Mm(12.7)
-    section.footer_distance = Mm(12.7)
-    style = NCC19.styles['Normal']
-    font = style.font
-    font.name = 'Arial'
-    font.size = Pt(12)
+        NCC19 = Document()
+        section = NCC19.sections[0]
+        section.page_height = Mm(350)
+        section.page_width = Mm(297)
+        section.left_margin = Mm(20)
+        section.right_margin = Mm(20)
+        section.top_margin = Mm(25.4)
+        section.bottom_margin = Mm(25.4)
+        section.header_distance = Mm(12.7)
+        section.footer_distance = Mm(12.7)
+        style = NCC19.styles['Normal']
+        font = style.font
+        font.name = 'Arial'
+        font.size = Pt(12)
 
-    x = 2.5
-    h_res = x
-    w_res = 2*x
+        x = 2.5
+        h_res = x
+        w_res = 2*x
 
-    cols = st.columns(4)
-    with cols[0]:
-        project_name = st.text_input("**Building Name / Address:**", value = f'{callback_once().display_name}')
-    with cols[1]:
-        name = st.text_input("**Your Name / Position:**", value = 'Your Name/Position is required!')
-    with cols[2]:
-        today = datetime.datetime.now()
-        Date = st.date_input("**Date:**", value = today)
-    with cols[3]:
-        levels = st.text_input("**Storeys Above Ground:**", value = 1)
+        cols = st.columns(4)
+        with cols[0]:
+            project_name = st.text_input("**Building Name / Address:**", value = f'{callback_once().display_name}')
+        with cols[1]:
+            name = st.text_input("**Your Name / Position:**", value = 'Your Name/Position is required!')
+        with cols[2]:
+            today = datetime.datetime.now()
+            Date = st.date_input("**Date:**", value = today)
+        with cols[3]:
+            levels = st.text_input("**Storeys Above Ground:**", value = 1)
 
-    header = NCC19.sections[0].header
+        header = NCC19.sections[0].header
 
-    header.paragraphs[0].text = f'NCC19 Facade Calculator | Date: {Date} | Approved by: {name}'
-    NCC19.add_heading(f'NCC 2019 DtS Project Summary for {project_name}', 0)
-    NCC19.add_paragraph('The summary below provides an overview of where compliance has been achieved for Specification J1.5a - Calculation of U-Value and solar admittance - Method 1 (Single Aspect) and Method 2 (Multiple Apects).')
-    NCC19.add_paragraph(f'This {building_class} located in {building_state} with a {climate_zone} in {levels} level(s)')
-    
-    paragraph = NCC19.add_paragraph()
-    entire_model = pd.concat([round(model_faces_vertical,2),round(model_apertures,2)], axis = 1)
-    entire_model.reset_index(inplace = True)
-    entire_model.rename(columns={'index':'Face Direction'}, inplace= True)
-    t = NCC19.add_table(entire_model.shape[0]+1, entire_model.shape[1])
+        header.paragraphs[0].text = f'NCC19 Facade Calculator | Date: {Date} | Approved by: {name}'
+        NCC19.add_heading(f'NCC 2019 DtS Project Summary for {project_name}', 0)
+        NCC19.add_paragraph('The summary below provides an overview of where compliance has been achieved for Specification J1.5a - Calculation of U-Value and solar admittance - Method 1 (Single Aspect) and Method 2 (Multiple Apects).')
+        NCC19.add_paragraph(f'This {building_class} located in {building_state} with a {climate_zone} in {levels} level(s)')
+        
+        paragraph = NCC19.add_paragraph()
+        entire_model = pd.concat([round(model_faces_vertical,2),round(model_apertures,2)], axis = 1)
+        entire_model.reset_index(inplace = True)
+        entire_model.rename(columns={'index':'Face Direction'}, inplace= True)
+        t = NCC19.add_table(entire_model.shape[0]+1, entire_model.shape[1])
 
-    # Adding style to a table 
-    t.style = 'Medium Shading 1'
+        # Adding style to a table 
+        t.style = 'Medium Shading 1'
 
-    # add the header rows.
-    for j in range(entire_model.shape[-1]):
-        t.cell(0,j).text = entire_model.columns[j]
-
-    # add the rest of the data frame
-    for i in range(entire_model.shape[0]):
+        # add the header rows.
         for j in range(entire_model.shape[-1]):
-            t.cell(i+1,j).text = str(entire_model.values[i,j])
+            t.cell(0,j).text = entire_model.columns[j]
+
+        # add the rest of the data frame
+        for i in range(entire_model.shape[0]):
+            for j in range(entire_model.shape[-1]):
+                t.cell(i+1,j).text = str(entire_model.values[i,j])
 
 
-    NCC19.add_heading('METHOD 1:', 1)
-    paragraph = NCC19.add_paragraph()
-    run = paragraph.add_run()
-    run.add_picture('wall_glazing_u_bar.png', width=Inches(w_res), height= Inches(h_res))
-    run_2 = paragraph.add_run()
-    run_2.add_picture('sa_bar.png', width=Inches(w_res), height= Inches(h_res))
-    
-    NCC19.add_heading('METHOD 2:', 1)
-    paragraph = NCC19.add_paragraph()
-    run = paragraph.add_run()
-    run.add_picture('wall_glazing_u_total_bar.png', width=Inches(w_res), height= Inches(h_res))
-    run_2 = paragraph.add_run()
-    run_2.add_picture('AC_energy.png', width=Inches(w_res), height= Inches(h_res))
+        NCC19.add_heading('METHOD 1:', 1)
+        paragraph = NCC19.add_paragraph()
+        run = paragraph.add_run()
+        run.add_picture('wall_glazing_u_bar.png', width=Inches(w_res), height= Inches(h_res))
+        run_2 = paragraph.add_run()
+        run_2.add_picture('sa_bar.png', width=Inches(w_res), height= Inches(h_res))
+        
+        NCC19.add_heading('METHOD 2:', 1)
+        paragraph = NCC19.add_paragraph()
+        run = paragraph.add_run()
+        run.add_picture('wall_glazing_u_total_bar.png', width=Inches(w_res), height= Inches(h_res))
+        run_2 = paragraph.add_run()
+        run_2.add_picture('AC_energy.png', width=Inches(w_res), height= Inches(h_res))
 
 
-    p0 = NCC19.add_paragraph(f'The proposed thermal envelope performance includes an External Wall R-value of ')
-    
-    p0.add_run(f'{ex_wall_dts}, and Glass U-value & SHGC of {glass_u_dts} / {glass_shgc_dts}').bold= True
-    p0.add_run(' which indicates the proposed design as ')
-    p0.add_run(f'{method1_compliance}').bold= True
-    p0.add_run(' against NCC19 DtS Reference Method 1, and ')
-    p0.add_run(f'{method2_compliance}').bold= True
-    p0.add_run(' against NCC19 DtS Reference Method 2.')
+        p0 = NCC19.add_paragraph(f'The proposed thermal envelope performance includes an External Wall R-value of ')
+        
+        p0.add_run(f'{ex_wall_dts}, and Glass U-value & SHGC of {glass_u_dts} / {glass_shgc_dts}').bold= True
+        p0.add_run(' which indicates the proposed design as ')
+        p0.add_run(f'{method1_compliance}').bold= True
+        p0.add_run(' against NCC19 DtS Reference Method 1, and ')
+        p0.add_run(f'{method2_compliance}').bold= True
+        p0.add_run(' against NCC19 DtS Reference Method 2.')
 
-    # NCC19.add_heading(f'Project Details', 1)
+        # NCC19.add_heading(f'Project Details', 1)
 
-    buffer = io.BytesIO()
-    NCC19.save(buffer)
-    export_as_word = st.download_button(
-            label="Generate NCC19 Facade Calculator Report.docx",
-            data=buffer,
-            file_name=f'NCC19 Glass Facade Calculator - {project_name}.docx',
-            mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        )
+        buffer = io.BytesIO()
+        NCC19.save(buffer)
+        export_as_word = st.download_button(
+                label="Generate NCC19 Facade Calculator Report.docx",
+                data=buffer,
+                file_name=f'NCC19 Glass Facade Calculator - {project_name}.docx',
+                mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            )
