@@ -146,7 +146,7 @@ with st.sidebar:
 
     baseline_calc = st.radio("**Thermal Envelope Baseline:**", options = ['None','Facade Calculator NCC 2019 (Australia)', 'ASHRAE 90.1 Guidelines', 'PassivHause Standard'])
 
-    bldg_classes = {'Class 2 - apartment building (Common Area)':2,
+    bldg_classes_ncc19 = {'Class 2 - apartment building (Common Area)':2,
     'Class 3 - student accommodation':3,
     'Class 3 - hotel':3,
     'Class 3 - other':3,
@@ -166,6 +166,23 @@ with st.sidebar:
     'Class 9b - theatres and cinemas with multiple auditoria, art galleries or the like':'9b',
     'Class 9c - aged care building':'9c'}
 
+
+    bldg_type_ashrae = {'Nonresidential':0,
+    'Residential':1,
+    'Semiheated':2}
+
+    opaque_envelope_type_ashrae = {'Roof':0,
+    'Walls, above Grade':1,
+    'Walls, below Grade':2,
+    'Floors':3,
+    'Slab-on-Grade Floors':4,
+    'Opaque Doors':5,
+    }
+
+    fenestration_envelope_type_ashrae = {'Vertical Fenestration (0-40% WWR)':0,
+    'Skylight (0-3% Roof)':1,
+    }
+
     aus_climate_zone = {'Climate Zone 1 - High humidity summer, warm winter':1,
     'Climate Zone 2 - Warm humid summer, mild winter':2,
     'Climate Zone 3 - Hot dry summer, warm winter':3,
@@ -175,18 +192,33 @@ with st.sidebar:
     'Climate Zone 7 - Cool temperate':7,
     'Climate Zone 8 - Alpine':8}
 
+    ashrae_climate_zone = {'Climate Zone 0':0, 'Climate Zone 1':1,
+    'Climate Zone 2':2,
+    'Climate Zone 3':3,
+    'Climate Zone 4':4,
+    'Climate Zone 5':5,
+    'Climate Zone 6':6,
+    'Climate Zone 7':7,
+    'Climate Zone 8':8}
+
     if baseline_calc == 'None':
         ""
 
     elif baseline_calc == 'Facade Calculator NCC 2019 (Australia)':
         building_state = st.selectbox('**Building State:**',['ACT','NT','QLD','NSW','SA','TAS','VIC','WA'], index = 2)
-        building_class = st.selectbox('**Building Classification:**',bldg_classes, index = 4)
+        building_class = st.selectbox('**Building Classification:**',bldg_classes_ncc19, index = 4)
         climate_zone = st.selectbox('**Climate Zone:**',aus_climate_zone, index = 1)
         ex_wall_dts = st.number_input('**External Wall R-value:**', value = 1.4)
         glass_u_dts = st.number_input('**Glass U-value:**', value = 3.5)
         glass_shgc_dts = st.number_input('**Glass SHGC:**', value = 0.5)
 
-    elif baseline_calc == 'ASHRAE Standard (US)':
+    elif baseline_calc == 'ASHRAE 90.1 Guidelines':
+        ashrae_climate = st.selectbox('**ASHRAE Climate Zone:**',ashrae_climate_zone, index = 1)
+        building_type = st.selectbox('**Building Classification:**',bldg_type_ashrae, index = 1)
+        opaque_type = st.selectbox('**Opaque Elements:**',opaque_envelope_type_ashrae, index = 0)
+        fenes_type = st.selectbox('**Fenestration Elements:**',fenestration_envelope_type_ashrae, index = 0)
+
+    elif baseline_calc == 'PassivHause Standard':
         ""
 
 
@@ -390,12 +422,12 @@ if st.session_state.get_hbjson is not None and target_rooms_index != []:
         R_target = []
         for i in range(0,4):
             if model_faces_vertical['WWR (%)'].iloc[i] <= 20:
-                if bldg_classes[building_class] == 2 or bldg_classes[building_class] == 5 or bldg_classes[building_class] == 6 or bldg_classes[building_class] == 7 or bldg_classes[building_class] == 8 or bldg_classes[building_class] == '9b' or bldg_classes[building_class] == '9a':
+                if bldg_classes_ncc19[building_class] == 2 or bldg_classes_ncc19[building_class] == 5 or bldg_classes_ncc19[building_class] == 6 or bldg_classes_ncc19[building_class] == 7 or bldg_classes_ncc19[building_class] == 8 or bldg_classes_ncc19[building_class] == '9b' or bldg_classes_ncc19[building_class] == '9a':
                     if aus_climate_zone[climate_zone] == 2 or aus_climate_zone[climate_zone] == 3 or aus_climate_zone[climate_zone] == 4 or aus_climate_zone[climate_zone] == 5 or aus_climate_zone[climate_zone] == 6 or aus_climate_zone[climate_zone] == 7 or aus_climate_zone[climate_zone] == 8:
                         R_target.append(1.4)
                     elif aus_climate_zone[climate_zone] == 1:
                         R_target.append(2.4)
-                elif bldg_classes[building_class] == 3 or bldg_classes[building_class] == '9c' or bldg_classes[building_class] == '9a ward':
+                elif bldg_classes_ncc19[building_class] == 3 or bldg_classes_ncc19[building_class] == '9c' or bldg_classes_ncc19[building_class] == '9a ward':
                     if aus_climate_zone[climate_zone] == 1 or aus_climate_zone[climate_zone] == 3:
                         R_target.append(3.3)
                     elif aus_climate_zone[climate_zone] == 2 or aus_climate_zone[climate_zone] == 5:
@@ -421,17 +453,17 @@ if st.session_state.get_hbjson is not None and target_rooms_index != []:
         shading_multi = 1.0 #assuming no shades for reference buildings and will be equal for all orientations
 
         #Target Wall Glazing U-values
-        if bldg_classes[building_class] == 2 or bldg_classes[building_class] == 5 or bldg_classes[building_class] == 6 or bldg_classes[building_class] == 7 or bldg_classes[building_class] == 8 or bldg_classes[building_class] == '9b' or bldg_classes[building_class] == '9a':
+        if bldg_classes_ncc19[building_class] == 2 or bldg_classes_ncc19[building_class] == 5 or bldg_classes_ncc19[building_class] == 6 or bldg_classes_ncc19[building_class] == 7 or bldg_classes_ncc19[building_class] == 8 or bldg_classes_ncc19[building_class] == '9b' or bldg_classes_ncc19[building_class] == '9a':
             target_wall_glazing_U = 2.0
         else:
             if aus_climate_zone[climate_zone] == 2 or aus_climate_zone[climate_zone] == 5:
-                if bldg_classes[building_class] == 3 or bldg_classes[building_class] == '9c' or bldg_classes[building_class] == '9a ward':
+                if bldg_classes_ncc19[building_class] == 3 or bldg_classes_ncc19[building_class] == '9c' or bldg_classes_ncc19[building_class] == '9a ward':
                     target_wall_glazing_U = 2.0 
             elif aus_climate_zone[climate_zone] == 1 or aus_climate_zone[climate_zone] == 3 or aus_climate_zone[climate_zone] == 4 or aus_climate_zone[climate_zone] == 6 or aus_climate_zone[climate_zone] == 7:
-                if bldg_classes[building_class] == 3 or bldg_classes[building_class] == '9c' or bldg_classes[building_class] == '9a ward':
+                if bldg_classes_ncc19[building_class] == 3 or bldg_classes_ncc19[building_class] == '9c' or bldg_classes_ncc19[building_class] == '9a ward':
                     target_wall_glazing_U = 1.1
             elif aus_climate_zone[climate_zone] == 8:
-                if bldg_classes[building_class] == 3 or bldg_classes[building_class] == '9c' or bldg_classes[building_class] == '9a ward':
+                if bldg_classes_ncc19[building_class] == 3 or bldg_classes_ncc19[building_class] == '9c' or bldg_classes_ncc19[building_class] == '9a ward':
                     target_wall_glazing_U = 0.9
 
         u_value_glazing = []
@@ -464,7 +496,7 @@ if st.session_state.get_hbjson is not None and target_rooms_index != []:
         Reference_Building_wall_U_value = (Wall_U_Value[0]*model_faces_vertical['ExWall Area (m2)'].iloc[0]+Wall_U_Value[1]*model_faces_vertical['ExWall Area (m2)'].iloc[1]+Wall_U_Value[2]*model_faces_vertical['ExWall Area (m2)'].iloc[2]+Wall_U_Value[3]*model_faces_vertical['ExWall Area (m2)'].iloc[3]) / model_faces_vertical['ExWall Area (m2)'].sum()
 
         #Solar admittancce targets
-        if bldg_classes[building_class] == 2 or bldg_classes[building_class] == 5 or bldg_classes[building_class] == 6 or bldg_classes[building_class] == 7 or bldg_classes[building_class] == 8 or bldg_classes[building_class] == '9b' or bldg_classes[building_class] == '9a':
+        if bldg_classes_ncc19[building_class] == 2 or bldg_classes_ncc19[building_class] == 5 or bldg_classes_ncc19[building_class] == 6 or bldg_classes_ncc19[building_class] == 7 or bldg_classes_ncc19[building_class] == 8 or bldg_classes_ncc19[building_class] == '9b' or bldg_classes_ncc19[building_class] == '9a':
             if aus_climate_zone[climate_zone] ==2 or aus_climate_zone[climate_zone] == 4 or aus_climate_zone[climate_zone] == 5 or aus_climate_zone[climate_zone] == 6 or aus_climate_zone[climate_zone] == 7:
                 solar_admittance = {'East':0.13, 'North':0.13,'South':0.13, 'West':0.13}
             elif aus_climate_zone[climate_zone] ==1:
@@ -473,7 +505,7 @@ if st.session_state.get_hbjson is not None and target_rooms_index != []:
                 solar_admittance = {'East':0.16, 'North':0.16,'South':0.16, 'West':0.16}
             elif aus_climate_zone[climate_zone] ==8:
                 solar_admittance = {'East':0.20, 'North':0.20,'South':0.42, 'West':0.36}
-        elif bldg_classes[building_class] == 3 or bldg_classes[building_class] == '9c' or bldg_classes[building_class] == '9a ward':
+        elif bldg_classes_ncc19[building_class] == 3 or bldg_classes_ncc19[building_class] == '9c' or bldg_classes_ncc19[building_class] == '9a ward':
             if aus_climate_zone[climate_zone] ==1:
                 solar_admittance = {'East':0.07, 'North':0.07,'South':0.10, 'West':0.07}
             elif aus_climate_zone[climate_zone] == 3 or aus_climate_zone[climate_zone] == 4 or aus_climate_zone[climate_zone] ==6:
@@ -484,7 +516,7 @@ if st.session_state.get_hbjson is not None and target_rooms_index != []:
                 solar_admittance = {'East':0.07, 'North':0.07,'South':0.08, 'West':0.07}
             elif aus_climate_zone[climate_zone] == 8:
                 solar_admittance = {'East':0.08, 'North':0.08,'South':0.08, 'West':0.08}
-        if bldg_classes[building_class] == 2 or bldg_classes[building_class] == 5 or bldg_classes[building_class] == 6 or bldg_classes[building_class] == 7 or bldg_classes[building_class] == 8 or bldg_classes[building_class] == '9b' or bldg_classes[building_class] == '9a':
+        if bldg_classes_ncc19[building_class] == 2 or bldg_classes_ncc19[building_class] == 5 or bldg_classes_ncc19[building_class] == 6 or bldg_classes_ncc19[building_class] == 7 or bldg_classes_ncc19[building_class] == 8 or bldg_classes_ncc19[building_class] == '9b' or bldg_classes_ncc19[building_class] == '9a':
             if aus_climate_zone[climate_zone] == 1:
                 solar_admittance_weight_coe = {'East':1.39, 'North':1.47,'South':1, 'West':1.41}
             elif aus_climate_zone[climate_zone] == 2:
@@ -501,7 +533,7 @@ if st.session_state.get_hbjson is not None and target_rooms_index != []:
                 solar_admittance_weight_coe = {'East':1.84, 'North':2.4,'South':1, 'West':1.92}
             elif aus_climate_zone[climate_zone] == 8:
                 solar_admittance_weight_coe = {'East':1.92, 'North':1.88,'South':1, 'West':1.25}
-        elif bldg_classes[building_class] == 3 or bldg_classes[building_class] == '9c' or bldg_classes[building_class] == '9a ward':
+        elif bldg_classes_ncc19[building_class] == 3 or bldg_classes_ncc19[building_class] == '9c' or bldg_classes_ncc19[building_class] == '9a ward':
             if aus_climate_zone[climate_zone] == 1:
                 solar_admittance_weight_coe = {'East':1.3, 'North':1.47,'South':1, 'West':1.37}
             elif aus_climate_zone[climate_zone] == 2:
@@ -954,3 +986,18 @@ if st.session_state.get_hbjson is not None and target_rooms_index != []:
                 file_name=f'NCC19 Glass Facade Calculator - {project_name}.docx',
                 mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
             )
+
+
+#ASHRAE 90.1 Standard
+    elif baseline_calc == 'ASHRAE 90.1 Guidelines':
+        st.header("Reference Building Fabric Performance - ASHRAE 90.1 2016")
+
+        df = pd.read_csv(r"C:\Users\amirt\StreamlitApps\SpaceXtract\ashrae\ASHRAE Standard_2016.csv", header = None).transpose()
+        df
+        if ashrae_climate == 'Climate Zone 1':
+            if building_type == 'Nonresidential':
+                if opaque_type == 'Roof':
+                    cols = st.columns(3)
+                    for i in range(0,3):
+                        with cols[i]:
+                            st.metric('',df.loc[1,i+3])
