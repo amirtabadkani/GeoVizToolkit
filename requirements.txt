@@ -84,3 +84,4 @@ validators==0.21.2
 vtk==9.2.6
 watchdog==3.0.0
 zipp==3.16.2
+docx
