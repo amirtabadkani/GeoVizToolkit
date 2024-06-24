@@ -4,7 +4,6 @@ honeybee-ies
 pandas
 ladybug-geometry
 honeybee-core
-honeybee-vtk
 pollination-streamlit-viewer
 pollination-streamlit-io
 pollination-streamlit
